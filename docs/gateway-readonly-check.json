@@ -1,0 +1,15 @@
+{
+  "read_only": true,
+  "pod_start_requested": false,
+  "provider_inference_requested": false,
+  "chain_transaction_sent": false,
+  "hotkey_name": "default",
+  "wallet_name": "sn118-miner",
+  "health_http_status": 200,
+  "current_pod_http_status": 403,
+  "gateway_request_accepted": false,
+  "gateway_error": "hotkey_not_registered",
+  "round": null,
+  "pod_ready": false,
+  "session_exists": false
+}

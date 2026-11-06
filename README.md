@@ -6,6 +6,8 @@
 
 게시 대상 저장소는 `https://github.com/Cr0wn0207/sn17-404-miner`입니다. 현재 작업 범위는 **로컬 검증과 패키지 준비**이며, 지갑 생성·등록·잠금·온체인 제출·GitHub push는 실행하지 않습니다. Codex 구독 설정과 로컬 점검 결과는 [구독 인증 안내](docs/SUBSCRIPTION.ko.md)에 있습니다.
 
+지정 지갑은 `sn118-miner/default`이며 netuid 17 UID 100 등록을 확인했습니다. [등록·잠금·Witness 접근 점검](docs/REGISTRATION.ko.md)을 확인하세요. 준비된 `run-codex.sh`는 이 지갑과 Codex 구독을 선택하는 실행 도우미입니다.
+
 ## 생성 과정
 
 1. Sol로 치수·재료·정체성을 결정하는 7개 특징을 분석합니다.

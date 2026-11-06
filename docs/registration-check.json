@@ -1,0 +1,24 @@
+{
+  "network": "finney",
+  "netuid": 17,
+  "block": 9449388,
+  "block_hash": "0x27f1735e34ac271b5117346cf65e220cca72768677e43bb169bed2023f8f199b",
+  "wallet_name": "sn118-miner",
+  "hotkey_name": "default",
+  "coldkey_ss58": "5CPGaV8QZwogrBnFDxWtygyWw4TbnrLJMbD3g4VECQHYa3hz",
+  "hotkey_ss58": "5GNmn5BeybKcMV45E67PudrsbdHYNUbeNqHS6GF8vzBviMh2",
+  "uid": 100,
+  "uid_100_hotkey": "5GNmn5BeybKcMV45E67PudrsbdHYNUbeNqHS6GF8vzBviMh2",
+  "owner_matches_wallet": true,
+  "locked_alpha_rao": 0,
+  "locked_alpha": "0",
+  "read_only": true,
+  "uid_matches_user": true,
+  "finalized_check": {
+    "block": 9449392,
+    "block_hash": "0xf854327895824fc0bb5390e410ce298d7584ade8c4175de78cf1e136ebd18cbc",
+    "uid": 100,
+    "owner_matches_wallet": true,
+    "revealed_commitment_entries": 0
+  }
+}

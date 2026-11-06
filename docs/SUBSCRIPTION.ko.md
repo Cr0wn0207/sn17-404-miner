@@ -38,7 +38,7 @@ Codex는 파일 기반 인증에서 `CODEX_HOME/auth.json`을 사용하며 기�
 
 자세한 비밀정보 없는 결과: [subscription-preflight.json](subscription-preflight.json).
 
-이 결과는 로컬 로그인·SDK 호환성입니다. ChatGPT Pro의 실제 모델별 사용 가능량이나 원격 witness 접근 성공을 입증하는 것은 아닙니다. 사용자에게 netuid 17 등록 wallet/hotkey가 아직 없으므로 gateway 인증과 실제 생성·제출 검증은 남아 있습니다.
+이 결과는 로컬 로그인·SDK 호환성입니다. ChatGPT Pro의 실제 모델별 사용 가능량이나 원격 witness 접근 성공을 입증하는 것은 아닙니다. 후속 점검에서는 `sn118-miner/default`의 netuid 17 UID 100 등록을 확인했으나, gateway GET은 `403 hotkey_not_registered`를 반환했습니다. [등록 및 접근 점검](REGISTRATION.ko.md)에 현재 잠금량과 남은 조건을 정리했습니다.
 
 ## 사용자 확인 후의 실행 예시
 
