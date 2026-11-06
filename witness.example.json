@@ -1,4 +1,6 @@
 {
   "witness_url": "https://witness.subnet404.xyz",
-  "proof_parameters": "/root/404-gen-subnet/witness-server/verifier/params"
+  "proof_parameters": "/root/404-gen-subnet/witness-server/verifier/params",
+  "codex_home": "/root/.codex",
+  "codex": "codex"
 }

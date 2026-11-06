@@ -16,8 +16,11 @@
 | 실제 기록 초안 단계 재실행 | 통과 | 호박 후보 6개, 24개 호출/렌더 관찰, 동일 소스 hash·순서·정산 |
 | 새 렌더 재현 | 4/4 바이트 일치 | 시계·SUV·축음기·호박 각각 대표 초안의 white-front 미리보기 |
 | 고해상도 정면 렌더 | 4/4 성공 | 대표 초안당 1024px의 정면 4시점 |
+| Codex 구독 로컬 preflight | 4/4 통과 | CLI ChatGPT 로그인, SDK 인증 로딩, 버전, native prover 초기화 |
 
 원자료: [JavaScript validation](javascript-validation.json), [실제 초안 단계 replay](initial-stage-replay.json), [렌더 재현 검사](render-checks.json).
+
+사용자가 Codex 구독 인증을 지정한 뒤 `witness.json`의 `codex_home`과 CLI 경로를 설정했습니다. `codex login status`가 ChatGPT 로그인을 보고했고, pinned Witness SDK가 파일 인증을 읽는 데 성공했습니다. 공개 증명 파라미터 3개로 native prover도 초기화됐습니다. 원자료는 [subscription-preflight.json](subscription-preflight.json)입니다. 사용자에게 등록된 wallet/hotkey가 아직 없으므로 gateway 인증·증명 전송·모델 호출은 수행하지 않았습니다.
 
 10개 초안의 vertex 수는 50,938~232,582, draw calls는 4~74, texture 데이터는 최대 1,703,936 bytes였습니다. 모든 bbox 축이 약 ±0.49 안에 있습니다. SUV 초안은 232,582 vertices로 상한에 가깝습니다. 이 초안이 최종 개선·선택으로 확정된 것은 아닙니다.
 
@@ -51,7 +54,7 @@
 
 ## 이어서 실행하기
 
-1. 유효한 OpenRouter 키 파일 경로가 마련되면 `tools/develop.py`로 전체 개발 실행과 `--replay`를 확인합니다. 최종 소스로 만든 새 실험 디렉터리를 사용합니다.
-2. 공개 전 확정한 소스를 본인 GitHub 저장소로 push하고, 전체 SHA를 chain commitment에 사용합니다.
-3. 공식 생성은 OpenRouter가 아닌 OpenAI API 또는 Codex 구독으로 witness를 경유합니다. frozen prompts/seed와 승인된 SHA를 유지합니다.
+1. 현재 지정된 인증은 Codex 구독이며 OpenRouter 재발급은 필수 준비 사항이 아닙니다. `python tools/preflight.py`로 로컬 인증·파라미터 상태를 점검합니다.
+2. 사용자가 온체인 진행을 확인한 뒤 등록된 wallet/hotkey와 잠금 상태를 준비합니다. 게시 대상은 `Cr0wn0207/sn17-404-miner`입니다. 원격 게시와 체인 제출은 현재 실행하지 않았습니다.
+3. 공식 생성은 `--api` 없이 Codex 구독으로 witness를 경유합니다. frozen prompts/seed와 승인된 SHA를 유지합니다. 실제 gateway/model/replay 검증은 등록된 hotkey와 라운드 접근 권한이 준비된 뒤 확인해야 합니다.
 4. 공식 이미지 128개가 공개되기 전에는 라운드 3 우승 여부를 증명할 수 없습니다. 완성된 생성기를 제출할 수 있는 것과 1등이 보장되는 것은 구분해야 합니다.

@@ -115,4 +115,4 @@ README의 일부 렌더러 버전 표기와 package의 최신 버전은 다릅�
 5. deadline 전에 반환 결과가 Pod에 최종 저장되었는지 확인하고 미완료 capture는 동일 요청으로 복구합니다.
 6. DUELS와 validation/source audit 결과를 확인합니다. 화질이 좋아도 재현·예산·감사 실패이면 리더가 될 수 없습니다.
 
-이 작업에서 chain commitment, alpha lock, 등록, 원격 GitHub 게시를 실행하지는 않았습니다. 사용할 저장소·wallet/hotkey와 공식 인증이 지정되어야 해당 실행을 특정할 수 있습니다.
+이 작업에서 chain commitment, alpha lock, 등록, 원격 GitHub 게시를 실행하지는 않았습니다. 후속 지시에서 저장소는 `Cr0wn0207/sn17-404-miner`, 인증은 Codex 구독으로 지정됐습니다. [로컬 구독 인증 점검](SUBSCRIPTION.ko.md)은 통과했으며, 등록된 wallet/hotkey 준비와 사용자의 온체인 진행 확인이 남아 있습니다.

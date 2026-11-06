@@ -1,0 +1,59 @@
+{
+  "scope": "local_only",
+  "authentication_mode": "codex",
+  "checks": {
+    "versions": {
+      "passed": true,
+      "detail": {
+        "python": "3.13.15",
+        "packages": {
+          "404-witness-client": "0.2.17",
+          "404-renderer-client": "0.1.4",
+          "404-miner-runtime": "0.1.5",
+          "pillow": "13.0.0",
+          "openai": "3.29.0",
+          "pydantic": "2.14.1"
+        }
+      }
+    },
+    "codex_cli": {
+      "passed": true,
+      "detail": {
+        "chatgpt_login_reported": true,
+        "raw_cli_output_recorded": false
+      }
+    },
+    "subscription": {
+      "passed": true,
+      "detail": {
+        "mode": "codex",
+        "file_login": true,
+        "sdk_credentials_loaded": true,
+        "refresh_attempted": false,
+        "credential_values_emitted": false
+      }
+    },
+    "proof_parameters": {
+      "passed": true,
+      "detail": {
+        "public_parameter_files": [
+          "circuit.bin",
+          "proving.bin",
+          "verifying.bin"
+        ],
+        "native_prover_initialized": true,
+        "verifying_key_sha256": "6478059e4ad0d39e8c157c76cea9c6dd777c2ab5143cf8694876094facf39b16"
+      }
+    }
+  },
+  "not_performed": [
+    "provider_inference",
+    "witness_gateway_session",
+    "wallet_creation",
+    "hotkey_registration",
+    "alpha_lock",
+    "chain_commitment",
+    "github_push"
+  ],
+  "passed": true
+}

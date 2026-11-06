@@ -4,6 +4,8 @@
 
 엔트리포인트는 공식 async SDK 형식인 `async generate(image: bytes, seed: int, witness) -> str | None`입니다. 소스·데이터·프롬프트·요금표는 모두 이 저장소에 포함됩니다. 공식 대회 규정과 서비스 분석은 [분석 보고서](docs/ANALYSIS.ko.md)를 참고하세요.
 
+게시 대상 저장소는 `https://github.com/Cr0wn0207/sn17-404-miner`입니다. 현재 작업 범위는 **로컬 검증과 패키지 준비**이며, 지갑 생성·등록·잠금·온체인 제출·GitHub push는 실행하지 않습니다. Codex 구독 설정과 로컬 점검 결과는 [구독 인증 안내](docs/SUBSCRIPTION.ko.md)에 있습니다.
+
 ## 생성 과정
 
 1. Sol로 치수·재료·정체성을 결정하는 7개 특징을 분석합니다.
@@ -27,6 +29,16 @@ cp witness.example.json witness.json
 
 `witness.json`의 `proof_parameters`를 SDK 체크아웃의 `witness-server/verifier/params` 절대경로로 설정합니다. 이 경로의 공개 증명 파라미터 3개가 모두 있어야 합니다. 생성·재현에는 운영자가 제공하는 고정 환경을 사용하며, `generate` 안에서는 패키지를 설치하지 않습니다.
 
+`codex_home`은 ChatGPT로 로그인한 계정의 `auth.json` 디렉터리, `codex`는 CLI 실행 경로입니다. 현재 환경의 설정은 `/root/.codex`와 `/root/.local/bin/codex`를 사용합니다. 다른 VPS 계정에서 실행하면 그 계정의 절대경로로 바꾸세요. 인증 토큰을 `witness.json`에 복사하지 않습니다.
+
+지갑과 모델 호출 없이 로컬 설정을 확인합니다.
+
+```bash
+python tools/preflight.py
+```
+
+이 검사는 SDK 버전, CLI 로그인 상태, Witness의 구독 인증 로딩, native prover의 공개 파라미터 초기화를 확인합니다. 만료 임박 토큰의 자동 갱신이나 원격 gateway 세션·모델 생성은 실행하지 않습니다.
+
 Finney netuid 17에 등록되고 100-alpha 잠금 요건을 충족한 hotkey, 읽을 수 있는 공개 GitHub 저장소와 전체 40자리 commit SHA가 필요합니다. **과제·시드 공개 전에 commit을 확정하고 체인 commitment의 `repo`, `commit`에 등록해야 합니다.** 공개 후 수정한 코드는 해당 라운드에 소급 제출할 수 없습니다.
 
 공식 과제가 공개되면 해당 라운드의 `prompts.txt`와 정수 seed를 그대로 사용합니다.
@@ -37,7 +49,7 @@ python main.py --prompts /absolute/path/to/prompts.txt --seed PUBLISHED_SEED \
   --parallel-prompts 8 --parallel-calls 8
 ```
 
-Codex 구독 인증 또는 `OPENAI_API_KEY`와 `--api`가 필요합니다. **OpenRouter 키는 공식 witness의 OpenAI 인증을 대신할 수 없습니다.** API 키는 환경변수로 전달하고 저장소에 넣지 마세요. 배치 런타임이 최종 결과를 witness Pod에 제출합니다. 재시작할 때 같은 소스·seed·이미지·hotkey·인증 모드를 유지하세요.
+현재 선택한 인증은 **Codex 구독**입니다. 위 명령에 `--api`를 붙이지 않으면 배치 런타임이 `subscription="codex"`를 사용합니다. `witness.json`에 임의의 `subscription` 필드를 추가하는 방식은 아닙니다. 별도로 API 인증을 선택할 때만 `OPENAI_API_KEY`와 `--api`를 사용합니다. **OpenRouter 키는 공식 witness의 OpenAI 인증을 대신할 수 없습니다.** 배치 런타임이 최종 결과를 witness Pod에 제출하므로 지갑 등록과 사용자 확인 전에는 위 생성 명령을 실행하지 않습니다. 재시작할 때 같은 소스·seed·이미지·hotkey·인증 모드를 유지하세요.
 
 ## 로컬 개발·검증
 
