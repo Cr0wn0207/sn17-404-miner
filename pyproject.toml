@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=84,<85"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "404-round3-miner"
+version = "0.1.0"
+description = "Procedural image-to-Three.js competition generator with witnessed replay"
+requires-python = ">=3.13,<3.14"
+dependencies = [
+  "404-witness-client @ https://github.com/404-Repo/404-gen-subnet/releases/download/miner-runtime-v0.1.5/404_witness_client-0.2.17-py3-none-manylinux_2_34_x86_64.whl#sha256=70a7fda820edaa90d109817ac671487a3ac6a053ae0bb9b17991fe858671adfd",
+  "404-renderer-client @ https://github.com/404-Repo/404-gen-subnet/releases/download/miner-runtime-v0.1.5/404_renderer_client-0.1.4-py3-none-any.whl#sha256=35b1b77efe479a18713a0d817bd60749089cc7d0725c1738edbbcd8caccaa4fa",
+  "404-miner-runtime @ https://github.com/404-Repo/404-gen-subnet/releases/download/miner-runtime-v0.1.5/404_miner_runtime-0.1.5-py3-none-any.whl#sha256=db3f70f71b25f57bd06030bb637ee2e643b3a60849d541074d9da7e15ddc6f0c",
+  "pillow==13.0.0", "openai==3.29.0", "pydantic==2.14.1", "httpx==0.28.1",
+  "bittensor-wallet==4.1.0", "websockets==17.2", "cryptography==50.0.2", "tlslite-ng==0.8.2",
+]
+
+[tool.setuptools]
+packages = ["miner"]
+
+[tool.setuptools.package-data]
+miner = ["output_rules.txt", "pricing.json", "normalize.js"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+target-version = "py313"
+line-length = 120

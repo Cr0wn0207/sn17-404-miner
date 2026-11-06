@@ -1,0 +1,262 @@
+[
+  {
+    "name": "clock-draft10",
+    "status": "draft_not_final_pipeline_selection",
+    "passed": true,
+    "metrics": {
+      "vertices": 60697,
+      "drawCalls": 24,
+      "maxDepth": 2,
+      "instances": 88,
+      "textureBytes": 0,
+      "bbox": {
+        "min": {
+          "x": -0.4712182008717982,
+          "y": -0.49000000000000005,
+          "z": -0.13855184060907996
+        },
+        "max": {
+          "x": 0.4712182008717982,
+          "y": 0.49,
+          "z": 0.13855184060907993
+        }
+      }
+    },
+    "failures": [],
+    "total_ms": 177
+  },
+  {
+    "name": "clock-draft11",
+    "status": "draft_not_final_pipeline_selection",
+    "passed": true,
+    "metrics": {
+      "vertices": 50938,
+      "drawCalls": 33,
+      "maxDepth": 2,
+      "instances": 62,
+      "textureBytes": 65536,
+      "bbox": {
+        "min": {
+          "x": -0.4711900120985795,
+          "y": -0.49,
+          "z": -0.14051529808807772
+        },
+        "max": {
+          "x": 0.4711900120985795,
+          "y": 0.49,
+          "z": 0.14051529808807772
+        }
+      }
+    },
+    "failures": [],
+    "total_ms": 198
+  },
+  {
+    "name": "gramophone-draft10",
+    "status": "draft_not_final_pipeline_selection",
+    "passed": true,
+    "metrics": {
+      "vertices": 56118,
+      "drawCalls": 74,
+      "maxDepth": 2,
+      "instances": 12,
+      "textureBytes": 1048576,
+      "bbox": {
+        "min": {
+          "x": -0.35218105466927385,
+          "y": -0.49000000000000005,
+          "z": -0.23846067648465993
+        },
+        "max": {
+          "x": 0.35218105466927385,
+          "y": 0.49000000000000005,
+          "z": 0.23846067648465993
+        }
+      }
+    },
+    "failures": [],
+    "total_ms": 462
+  },
+  {
+    "name": "pumpkin-draft13",
+    "status": "draft_not_final_pipeline_selection",
+    "passed": true,
+    "metrics": {
+      "vertices": 52948,
+      "drawCalls": 5,
+      "maxDepth": 2,
+      "instances": 470,
+      "textureBytes": 1703936,
+      "bbox": {
+        "min": {
+          "x": -0.49,
+          "y": -0.4554672720460678,
+          "z": -0.47808038275359194
+        },
+        "max": {
+          "x": 0.49,
+          "y": 0.45546727204606774,
+          "z": 0.478080382753592
+        }
+      }
+    },
+    "failures": [],
+    "total_ms": 589
+  },
+  {
+    "name": "pumpkin-draft15",
+    "status": "draft_not_final_pipeline_selection",
+    "passed": true,
+    "metrics": {
+      "vertices": 53110,
+      "drawCalls": 4,
+      "maxDepth": 2,
+      "instances": 444,
+      "textureBytes": 1703936,
+      "bbox": {
+        "min": {
+          "x": -0.49,
+          "y": -0.4676233186290824,
+          "z": -0.4731993968728353
+        },
+        "max": {
+          "x": 0.49,
+          "y": 0.46762331862908246,
+          "z": 0.4731993968728353
+        }
+      }
+    },
+    "failures": [],
+    "total_ms": 504
+  },
+  {
+    "name": "pumpkin-draft14",
+    "status": "draft_not_final_pipeline_selection",
+    "passed": true,
+    "metrics": {
+      "vertices": 65946,
+      "drawCalls": 5,
+      "maxDepth": 2,
+      "instances": 440,
+      "textureBytes": 1376256,
+      "bbox": {
+        "min": {
+          "x": -0.49,
+          "y": -0.4586684520088699,
+          "z": -0.4748975001766065
+        },
+        "max": {
+          "x": 0.49000000000000005,
+          "y": 0.45866845200886996,
+          "z": 0.4748975001766064
+        }
+      }
+    },
+    "failures": [],
+    "total_ms": 667
+  },
+  {
+    "name": "pumpkin-draft11",
+    "status": "draft_not_final_pipeline_selection",
+    "passed": true,
+    "metrics": {
+      "vertices": 51561,
+      "drawCalls": 6,
+      "maxDepth": 2,
+      "instances": 448,
+      "textureBytes": 1703936,
+      "bbox": {
+        "min": {
+          "x": -0.49,
+          "y": -0.45986907571660224,
+          "z": -0.4899522705608306
+        },
+        "max": {
+          "x": 0.49,
+          "y": 0.4598690757166023,
+          "z": 0.4899522705608306
+        }
+      }
+    },
+    "failures": [],
+    "total_ms": 620
+  },
+  {
+    "name": "pumpkin-draft10",
+    "status": "draft_not_final_pipeline_selection",
+    "passed": true,
+    "metrics": {
+      "vertices": 59518,
+      "drawCalls": 5,
+      "maxDepth": 2,
+      "instances": 430,
+      "textureBytes": 1343488,
+      "bbox": {
+        "min": {
+          "x": -0.49,
+          "y": -0.46080915783836346,
+          "z": -0.4729490954179308
+        },
+        "max": {
+          "x": 0.48999999999999994,
+          "y": 0.4608091578383634,
+          "z": 0.4729490954179308
+        }
+      }
+    },
+    "failures": [],
+    "total_ms": 507
+  },
+  {
+    "name": "pumpkin-draft12",
+    "status": "draft_not_final_pipeline_selection",
+    "passed": true,
+    "metrics": {
+      "vertices": 51961,
+      "drawCalls": 5,
+      "maxDepth": 2,
+      "instances": 490,
+      "textureBytes": 1703936,
+      "bbox": {
+        "min": {
+          "x": -0.49,
+          "y": -0.4589593059647898,
+          "z": -0.4752326777549292
+        },
+        "max": {
+          "x": 0.49,
+          "y": 0.4589593059647898,
+          "z": 0.47523267775492917
+        }
+      }
+    },
+    "failures": [],
+    "total_ms": 538
+  },
+  {
+    "name": "suv-draft10",
+    "status": "draft_not_final_pipeline_selection",
+    "passed": true,
+    "metrics": {
+      "vertices": 232582,
+      "drawCalls": 18,
+      "maxDepth": 2,
+      "instances": 576,
+      "textureBytes": 65536,
+      "bbox": {
+        "min": {
+          "x": -0.2535364729604641,
+          "y": -0.2777469727679916,
+          "z": -0.49
+        },
+        "max": {
+          "x": 0.2535364729604641,
+          "y": 0.27774697276799154,
+          "z": 0.49000000000000005
+        }
+      }
+    },
+    "failures": [],
+    "total_ms": 496
+  }
+]

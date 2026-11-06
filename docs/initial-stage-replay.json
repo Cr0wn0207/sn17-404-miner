@@ -1,0 +1,114 @@
+{
+  "passed": true,
+  "scope": "six real recorded initial drafts; not full generation, not official witness replay",
+  "observations": 24,
+  "drafts": 6,
+  "trace": [
+    {
+      "kind": "call",
+      "sha256": "af22b835e95f4ff4af76f619500183b8720513257fc7aceea0899a6e8a770f19"
+    },
+    {
+      "kind": "call",
+      "sha256": "883f672326e7a9d0624c648cbc5dd2bcbdb64ae3f847c11de320e8e55de299c4"
+    },
+    {
+      "kind": "call",
+      "sha256": "d8ae8a7269d22f803bb79e9b2f29f5952a30438e6ff2a874cb85272c29e8467d"
+    },
+    {
+      "kind": "call",
+      "sha256": "0ae7c598ff40bfa16d9b3eae070007d81b4a6a730f3be08069940aa7832c9b7d"
+    },
+    {
+      "kind": "call",
+      "sha256": "7a3dad8916e9429e75ee4ee5856f64017f8e0db641f05355a6c867f8f7d73379"
+    },
+    {
+      "kind": "call",
+      "sha256": "62270afdae5b325a05d4c0fca08eb41418a3e960d7eef3c3b739e7779d997816"
+    },
+    {
+      "kind": "render",
+      "sha256": "ee3bd7744e785c77f4698d191edb0d272290b703a103350628c12ab5019d20fe"
+    },
+    {
+      "kind": "render",
+      "sha256": "03da5c2024465932ca9f1c6017f71d3e2e7919ff9c50d1da700afbecc4674c09"
+    },
+    {
+      "kind": "render",
+      "sha256": "c385323c234e1bcd1acdac995c9e30def6ad4ac9ed71e20321d666b9bdbf17cd"
+    },
+    {
+      "kind": "render",
+      "sha256": "b82549b9ebb4d4f8bbab93896a551d07fa93705eaf9f04a10557c16e319aa024"
+    },
+    {
+      "kind": "render",
+      "sha256": "657db9e613aed1cb984372e01a704fe8d54d9c88a67d3a5f7606812ed1c0bc5a"
+    },
+    {
+      "kind": "render",
+      "sha256": "dfc282250c734e7617eef4d1c91f52a7950078c7915b29be9347f8c70f810637"
+    },
+    {
+      "kind": "render",
+      "sha256": "54bfb98e741d340c7800526893cd18e13e3c655c59830d69dfe860165e3d85a5"
+    },
+    {
+      "kind": "render",
+      "sha256": "2e5857b5c78173717b89a765bb1e29a3b8927e595adb114fa3f7c709a2e52ba1"
+    },
+    {
+      "kind": "render",
+      "sha256": "a4a2e61256502e8f35f483e4817db9648968d7431f623a9ac7b1202abda5a810"
+    },
+    {
+      "kind": "render",
+      "sha256": "293575af1c4e38a128f7fe74e7898fa9316ac1d0d700db1c30ad24ce022ab540"
+    },
+    {
+      "kind": "render",
+      "sha256": "3db9329e4c23daf8ae5425668956f33a268948b5304f55dbd41825c76e7ec671"
+    },
+    {
+      "kind": "render",
+      "sha256": "d6b3b823beddc00eb2d8d5529bbf3c9b85f79460e610f7e0788b9360ad8bd74c"
+    },
+    {
+      "kind": "render",
+      "sha256": "3335afb23e98c0373bc01ec34002f95961e00e7868aba278b8d7d3b3f548285a"
+    },
+    {
+      "kind": "render",
+      "sha256": "aa76d5ab562a288957558e6b996814abd41b66609ed85c00a8716e0440fa064d"
+    },
+    {
+      "kind": "render",
+      "sha256": "0236a842f8ba9b4f255baaa8728c6de8c924c0675c43a223954bbd4757a9b287"
+    },
+    {
+      "kind": "render",
+      "sha256": "988a6f46dc884f680c6a111269d00d38b5c61fc63c049f205797ad2b9c3232c6"
+    },
+    {
+      "kind": "render",
+      "sha256": "f6a5f788bbe2ffb7b35f4c962f3004f09f0e54614f0121694ed1d984186339ed"
+    },
+    {
+      "kind": "render",
+      "sha256": "67f10211e3aedc7b5cb8381623209d755f7952ec0cff0c57c8682e67982b9a62"
+    }
+  ],
+  "sources": [
+    "d75b46a7390c588b2f3a136d0c47d1f5b619abcc80e2c3e1f518a0b559daf770",
+    "91a41f26312c25605cf34f31aee57d3a4cf29e4643446ea12189db6f5920b2b2",
+    "b34d27ce88d200704bb12c2059d5f515463ea7e52b63cea7616f0cf6ac28d77f",
+    "66bda28de4dc1891994aa4073145d9a5efc8849f6fabdd126b342d43e2f10a75",
+    "24b07fa628747c43a270c1ee987039f46c03c93b98964a11f445981f7d1730c8",
+    "dfa1cacd7cb6359529326a2ac5c55822518249442d048fc062fe0066737cc64d"
+  ],
+  "credits": "733386",
+  "calls": 6
+}

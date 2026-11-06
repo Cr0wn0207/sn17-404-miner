@@ -1,0 +1,49 @@
+"""Root competition entry point and official witness batch launcher."""
+
+from miner.pipeline import generate
+
+__all__ = ["generate"]
+
+
+async def main():
+    import argparse
+    from pathlib import Path
+
+    from miner_runtime.batch import run
+
+    parser = argparse.ArgumentParser(description=__doc__)
+    inputs = parser.add_mutually_exclusive_group(required=True)
+    inputs.add_argument("--prompts", type=Path)
+    inputs.add_argument("--image", action="append")
+    parser.add_argument("--seed", type=int, required=True)
+    parser.add_argument("--wallet-name", default="miner")
+    parser.add_argument("--wallet-hotkey", default="default")
+    parser.add_argument("--wallet-path", default="~/.bittensor/wallets")
+    parser.add_argument("--parallel-prompts", type=int, default=8)
+    parser.add_argument("--parallel-calls", type=int, default=8)
+    parser.add_argument("--attempts", type=int, default=3)
+    parser.add_argument("--api", action="store_true")
+    args = parser.parse_args()
+    sources = [s.strip() for s in args.prompts.read_text().splitlines() if s.strip()] if args.prompts else args.image
+    mapped = {Path(source).stem: source for source in sources}
+    if len(mapped) != len(sources):
+        parser.error("Duplicate image stems: preserve the official unique prompt filenames")
+    await run(
+        generate,
+        mapped,
+        args.seed,
+        witness_config=Path(__file__).with_name("witness.json"),
+        workers=args.parallel_prompts,
+        parallel_calls=args.parallel_calls,
+        attempts=args.attempts,
+        wallet_name=args.wallet_name,
+        wallet_hotkey=args.wallet_hotkey,
+        wallet_path=args.wallet_path,
+        api=args.api,
+    )
+
+
+if __name__ == "__main__":
+    import asyncio
+
+    asyncio.run(main())

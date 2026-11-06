@@ -1,0 +1,26 @@
+[
+  {
+    "name": "clock-draft11",
+    "preview_rerender_identical": true,
+    "1024_front_render": true,
+    "preview_sha256": "3d2cd13a992e08faa85fa79514738b8a7c167865992de211811d57860b53731c"
+  },
+  {
+    "name": "gramophone-draft10",
+    "preview_rerender_identical": true,
+    "1024_front_render": true,
+    "preview_sha256": "d22b4464e1192ee1ec33bb3e6100783493e7bebe3029b0b00025409a9008bc96"
+  },
+  {
+    "name": "suv-draft10",
+    "preview_rerender_identical": true,
+    "1024_front_render": true,
+    "preview_sha256": "60117fd8485930f433b15589f54411aee1b349ec23d1096b301f36393ba0d045"
+  },
+  {
+    "name": "pumpkin-draft13",
+    "preview_rerender_identical": true,
+    "1024_front_render": true,
+    "preview_sha256": "88f3123e69c98ce626a0cca677e7ddbf08d4ddd81d6febb29c82a0627908c024"
+  }
+]
