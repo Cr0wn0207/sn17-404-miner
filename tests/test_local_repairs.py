@@ -2,6 +2,7 @@ import asyncio
 import io
 import json
 import base64
+import math
 from decimal import Decimal
 from types import SimpleNamespace
 
@@ -129,6 +130,29 @@ def test_reference_detail_retains_thin_parts_and_always_supplements_the_full_pho
     assert len(images) == 2
     assert base64.b64decode(images[0].split(',')[1]) == search.image
     assert reference_closeup(png()) is None
+
+
+def test_elevation_search_preserves_geometry_yaw_dimensions_and_incumbent(monkeypatch):
+    search = Search(png(), 42, FakeWitness())
+    parent = Candidate('already-validated-source', b'parent-sheet', SOURCE, lineage=7,
+                       detail=png(), yaw=.4, stretch=(1.12, 1, .88))
+    rendered, selections = [], []
+    async def render(raw, **kwargs):
+        rendered.append((raw, kwargs))
+        return Candidate('variant-' + str(kwargs['pitch']), b'variant-sheet', raw,
+                         lineage=kwargs['lineage'], pitch=kwargs['pitch'],
+                         yaw=kwargs['yaw'], stretch=kwargs['stretch'])
+    async def rank(candidates, ident, **kwargs):
+        selections.append((candidates, ident, kwargs))
+        return [(candidates[0], '')]
+    monkeypatch.setattr(search, 'render', render)
+    monkeypatch.setattr(search, 'rank', rank)
+    assert asyncio.run(search.elevated(parent)) is parent
+    assert 1 <= len(rendered) <= 3
+    assert any(abs(v['pitch'] - math.pi / 4) < 1e-9 for raw, v in rendered)
+    assert all(raw == parent.raw and v['yaw'] == parent.yaw and v['stretch'] == parent.stretch
+               and v['lineage'] == parent.lineage for raw, v in rendered)
+    assert selections[0][0][0] is parent and selections[0][1] == 2500
 
 
 def test_alignment_compares_shape_without_rewarding_translation_or_canvas_fill():

@@ -294,6 +294,40 @@ class Search:
         ranked = await self.rank(variants, 1900, compressed=True)
         return ranked[0][0]
 
+    async def elevated(self, parent):
+        """Expose photographed upper surfaces without changing any modeled part."""
+        # A mask cannot measure whether a bowl's contents or a dial are visible.
+        # Always offer 45 degrees to the visual comparison; masks shortlist at
+        # most two other angles. The existing validated pose stays incumbent.
+        proposals = []
+        for angle in (30, 45, 60, 90):
+            pitch = math.radians(angle)
+            if abs(pitch - parent.pitch) < 1e-9:
+                continue
+            source = normalize(parent.raw, parent.yaw, pitch, parent.stretch)
+            try:
+                grid = await self.witness.render(source, POSE_PROBE)
+            except (RenderRejected, ValueError):
+                continue
+            match = alignment.similarity(self.image, grid)
+            proposals.append((match if match is not None else -10., angle))
+        if not proposals:
+            return parent
+        proposals.sort(key=lambda row: (-row[0], abs(row[1] - 45), row[1]))
+        angles = ([45] if any(angle == 45 for _, angle in proposals) else [])
+        angles += [angle for _, angle in proposals if angle not in angles][:2]
+        variants = [parent]
+        for angle in angles:
+            try:
+                candidate = await self.render(parent.raw, yaw=parent.yaw, pitch=math.radians(angle),
+                                               stretch=parent.stretch, lineage=parent.lineage)
+            except (RenderRejected, ValueError):
+                continue
+            if candidate.sheet != parent.sheet:
+                variants.append(candidate)
+        ranked = await self.rank(variants, 2500, compressed=True, instructions=prompts.POSE_JUDGE)
+        return ranked[0][0]
+
     def construction(self, strategy, parent, feedback):
         content = self.target()
         text = "Construction brief:\n" + self.brief + "\nApproach: " + strategy
@@ -432,7 +466,7 @@ class Search:
         return candidates
 
     async def rank(self, candidates, ident, *, keep=1, mirror=True, reserve=0, distinct_lineages=False, compressed=False,
-                   incumbent=True):
+                   incumbent=True, instructions=None):
         # The first candidate is the incumbent and wins close/noisy comparisons.
         candidates = list({c.source: c for c in candidates if c is not None}.values())
         if not candidates:
@@ -459,7 +493,7 @@ class Search:
             raw = await self.call(
                 ident + order_index,
                 SOL,
-                prompts.JUDGE,
+                instructions or prompts.JUDGE,
                 content,
                 4096,
                 schema=score_schema(list(labels)),
@@ -651,4 +685,5 @@ async def generate(image, seed, witness):
     winner, _ = (await search.rank(variants, 1400, compressed=True))[0]
     # This is exactly the source that was rendered, not a post-selection rewrite.
     winner = await search.aligned(winner)
+    winner = await search.elevated(winner)
     return winner.source
