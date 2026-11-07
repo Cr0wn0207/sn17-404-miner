@@ -18,8 +18,9 @@ from pathlib import Path
 from PIL import Image, ImageChops
 from renderer_client import RenderOptions, RenderRejected
 
-from . import prompts
+from . import alignment, prompts
 from .budget import LIMIT, Budget, charge, input_bound
+from .surgery import PATCH_SCHEMA, apply_edits
 
 SOL = "gpt-6.1-sol"
 ASTRA = "gpt-6-astra"
@@ -28,6 +29,8 @@ GRAY = RenderOptions(thetas=(30, 330, 0, 0), phis=(0, 0, 15, -30), img_size=384,
 SIDES = RenderOptions(
     thetas=(90, 180, 270, 0), phis=(0, 0, 0, -90), img_size=384, gap=0, bg_color="ffffff", lighting="neutral"
 )
+POSE_PROBE = RenderOptions(thetas=(30, 330, 0, 0), phis=(0, 0, 15, -30),
+                           img_size=192, gap=0, bg_color="ffffff", lighting="neutral")
 WRAPPER = Path(__file__).with_name("normalize.js").read_text()
 
 
@@ -124,6 +127,7 @@ class Candidate:
     detail: bytes = b""
     pitch: float = 0
     stretch: tuple = (1, 1, 1)
+    yaw: float = 0
 
 
 class Search:
@@ -173,7 +177,76 @@ class Search:
         gray = await self.witness.render(source, GRAY)
         sides = await self.witness.render(source, SIDES)
         detail = front_closeups(front)
-        return Candidate(source, contact_sheet(detail, gray, sides), raw, lineage, detail, pitch, stretch)
+        return Candidate(source, contact_sheet(detail, gray, sides), raw, lineage, detail, pitch, stretch, yaw)
+
+    async def surgical(self, parent, feedback):
+        """Spend one late rewrite on measured local repairs, preserving its parent."""
+        # Protect enough credit for a complete edit request and two-order votes.
+        content = self.target() + [
+            {"type": "input_text", "text": "CURRENT REPLICA: enlarged four front views, then full comparison sheet."},
+            {"type": "input_image", "image_url": png_url(parent.detail), "detail": "high"},
+            {"type": "input_image", "image_url": png_url(parent.sheet), "detail": "high"},
+            {"type": "input_text", "text": "Construction brief:\n" + self.brief + "\nEarlier observations:\n" + feedback},
+        ]
+        patch_content = list(content) + [
+            {"type": "input_text", "text": "CURRENT RAW SOURCE:\n" + parent.raw},
+        ]
+        patch_reserve = charge(SOL, input_bound(prompts.SURGEON, patch_content, PATCH_SCHEMA) + 24000, 44000) + 250000
+        diagnostic = None
+        for model in (ASTRA, SOL):
+            if self.budget.allows(model, input_bound(prompts.DIAGNOSE, content), 6000, patch_reserve):
+                diagnostic = await self.call(1600, model, prompts.DIAGNOSE, content, 6000,
+                                             reserve=patch_reserve, effort="medium")
+                break
+        if not diagnostic:
+            return [(parent, feedback)]
+        patch_content.append({"type": "input_text", "text": "LOCAL REPAIR SPECIFICATION:\n" + diagnostic})
+        patch = await self.call(1700, SOL, prompts.SURGEON, patch_content, 44000,
+                                schema=PATCH_SCHEMA, reserve=250000, effort="xhigh")
+        if not patch:
+            return [(parent, feedback)]
+        try:
+            raw = apply_edits(parent.raw, patch)
+            if raw == parent.raw:
+                return [(parent, feedback)]
+            child = await self.render(raw, lineage=parent.lineage)
+        except (ValueError, KeyError, TypeError, RenderRejected):
+            # Ambiguous patches and invalid geometry cannot displace the parent.
+            # Infrastructure errors still propagate to durable capture recovery.
+            return [(parent, feedback)]
+        return await self.rank([parent, child], 1800, compressed=True, reserve=100000)
+
+    async def aligned(self, parent):
+        """Shortlist free pixel probes; never let a silhouette alone pick output."""
+        if alignment.foreground(self.image, reference=True) is None:
+            return parent
+        start_grid = await self.witness.render(parent.source, POSE_PROBE)
+        initial = alignment.similarity(self.image, start_grid)
+        if initial is None:
+            return parent
+        proposals = []
+        for angle in (-90, -30, -15, 15, 30, 90):
+            yaw = math.radians(angle)
+            source = normalize(parent.raw, yaw, parent.pitch, parent.stretch)
+            try:
+                grid = await self.witness.render(source, POSE_PROBE)
+            except (RenderRejected, ValueError):
+                continue
+            match = alignment.similarity(self.image, grid)
+            if match is not None and match >= initial + .025:
+                proposals.append((match, angle))
+        proposals.sort(key=lambda row: (-row[0], abs(row[1]), row[1]))
+        variants = [parent]
+        for _, angle in proposals[:2]:
+            try:
+                candidate = await self.render(parent.raw, yaw=math.radians(angle), pitch=parent.pitch,
+                                               stretch=parent.stretch, lineage=parent.lineage)
+            except (RenderRejected, ValueError):
+                continue
+            if candidate.sheet != parent.sheet:
+                variants.append(candidate)
+        ranked = await self.rank(variants, 1900, compressed=True)
+        return ranked[0][0]
 
     def construction(self, strategy, parent, feedback):
         content = self.target()
@@ -475,13 +548,14 @@ async def generate(image, seed, witness):
     beam = await search.rank([c for c, _ in beam] + children, 700, reserve=600000)
     # These are sequential improvements: each step receives the selected result
     # and critique from the preceding stage, rather than making sibling rewrites.
-    for ident, selection in ((800, 900), (1000, 1100)):
+    for ident, selection in ((800, 900),):
         children = await search.improve_stage(
             beam, ident, effort="xhigh", outputs=44000, reserve=180000,
             strategy="FINAL LIKENESS PASS: fix the most consequential remaining mismatch shown in the photo "
                      "and enlarged previews. Check ratios, contour transitions, identifying part sizes and material tones. "
                      "Keep established correct geometry and leave safe validation headroom.")
         beam = await search.rank([c for c, _ in beam] + children, selection, reserve=100000)
+    beam = await search.surgical(*beam[0])
     winner = beam[0][0]
     # Bounded numeric proportion search is evaluated on complete 3D assets.
     # Keep the untouched parent whenever a distortion is worse or ambiguous.
@@ -504,4 +578,5 @@ async def generate(image, seed, witness):
             variants.append(candidate)
     winner, _ = (await search.rank(variants, 1400, compressed=True))[0]
     # This is exactly the source that was rendered, not a post-selection rewrite.
+    winner = await search.aligned(winner)
     return winner.source
