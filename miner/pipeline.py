@@ -179,7 +179,7 @@ class Search:
         detail = front_closeups(front)
         return Candidate(source, contact_sheet(detail, gray, sides), raw, lineage, detail, pitch, stretch, yaw)
 
-    async def surgical(self, parent, feedback):
+    async def surgical(self, parent, feedback, *, ident=1600, outputs=44000, reserve=250000):
         """Spend one late rewrite on measured local repairs, preserving its parent."""
         # Protect enough credit for a complete edit request and two-order votes.
         content = self.target() + [
@@ -191,18 +191,18 @@ class Search:
         patch_content = list(content) + [
             {"type": "input_text", "text": "CURRENT RAW SOURCE:\n" + parent.raw},
         ]
-        patch_reserve = charge(SOL, input_bound(prompts.SURGEON, patch_content, PATCH_SCHEMA) + 24000, 44000) + 250000
+        patch_reserve = charge(SOL, input_bound(prompts.SURGEON, patch_content, PATCH_SCHEMA) + 24000, outputs) + reserve
         diagnostic = None
         for model in (ASTRA, SOL):
             if self.budget.allows(model, input_bound(prompts.DIAGNOSE, content), 6000, patch_reserve):
-                diagnostic = await self.call(1600, model, prompts.DIAGNOSE, content, 6000,
+                diagnostic = await self.call(ident, model, prompts.DIAGNOSE, content, 6000,
                                              reserve=patch_reserve, effort="medium")
                 break
         if not diagnostic:
             return [(parent, feedback)]
         patch_content.append({"type": "input_text", "text": "LOCAL REPAIR SPECIFICATION:\n" + diagnostic})
-        patch = await self.call(1700, SOL, prompts.SURGEON, patch_content, 44000,
-                                schema=PATCH_SCHEMA, reserve=250000, effort="xhigh")
+        patch = await self.call(ident + 100, SOL, prompts.SURGEON, patch_content, outputs,
+                                schema=PATCH_SCHEMA, reserve=reserve, effort="xhigh")
         if not patch:
             return [(parent, feedback)]
         try:
@@ -214,7 +214,7 @@ class Search:
             # Ambiguous patches and invalid geometry cannot displace the parent.
             # Infrastructure errors still propagate to durable capture recovery.
             return [(parent, feedback)]
-        return await self.rank([parent, child], 1800, compressed=True, reserve=100000)
+        return await self.rank([parent, child], ident + 200, compressed=True, reserve=100000)
 
     async def aligned(self, parent):
         """Shortlist free pixel probes; never let a silhouette alone pick output."""
@@ -556,6 +556,10 @@ async def generate(image, seed, witness):
                      "Keep established correct geometry and leave safe validation headroom.")
         beam = await search.rank([c for c, _ in beam] + children, selection, reserve=100000)
     beam = await search.surgical(*beam[0])
+    # Re-inspect the selected repair, then address its remaining visible defect.
+    # Keep ample final comparison headroom; the entire pass is skipped when its
+    # diagnostic, complete edit response and comparison cannot fit together.
+    beam = await search.surgical(*beam[0], ident=2100, outputs=32768, reserve=500000)
     winner = beam[0][0]
     # Bounded numeric proportion search is evaluated on complete 3D assets.
     # Keep the untouched parent whenever a distortion is worse or ambiguous.

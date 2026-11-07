@@ -1,6 +1,7 @@
 import asyncio
 import io
 import json
+from decimal import Decimal
 
 import pytest
 from PIL import Image, ImageDraw
@@ -48,6 +49,16 @@ def test_transport_failure_in_local_repair_is_not_converted_to_a_new_candidate()
     parent = Candidate('validated-parent', png(), SOURCE, detail=png())
     with pytest.raises(ConnectionError):
         asyncio.run(search.surgical(parent, 'repair contour'))
+
+
+def test_second_repair_cannot_spend_final_comparison_headroom():
+    witness = FakeWitness()
+    search = Search(png(), 42, witness)
+    search.budget.spent = Decimal(4000000)
+    parent = Candidate('validated-parent', png(), SOURCE, detail=png())
+    result = asyncio.run(search.surgical(parent, 'repair contour', ident=2100, outputs=32768, reserve=500000))
+    assert result == [(parent, 'repair contour')]
+    assert witness.trace == []
 
 
 def image_bytes(image):

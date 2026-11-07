@@ -41,10 +41,12 @@ class FakeWitness:
             raise self.error
         if request["request_id"] == 1:
             text = "Seven distinctive features and dimensions."
-        elif request["request_id"] == 1600:
+        elif request["request_id"] in (1600, 2100):
             text = "Repair the demonstrated contour without changing the correctly placed parts."
         elif request["request_id"] == 1700:
             text = json.dumps({'reason': 'Local repair', 'edits': [{'old': '// draft 800', 'new': '// locally improved 800'}]})
+        elif request["request_id"] == 2200:
+            text = json.dumps({'reason': 'Second local repair', 'edits': [{'old': '// locally improved 800', 'new': '// twice improved 800'}]})
         elif "text" in request:
             labels = request["text"]["format"]["schema"]["properties"]["scores"]["items"]["properties"]["label"]["enum"]
             text = json.dumps(
@@ -212,7 +214,8 @@ def test_late_improvements_receive_the_selected_preceding_source(monkeypatch):
     assert '// draft 601' in parent_text(800)
     assert '// draft 800' in parent_text(1700)
     assert all(calls[i]['reasoning']['effort'] == 'xhigh' for i in (600, 601, 800, 1700))
-    assert '// locally improved 800' in result
+    assert '// locally improved 800' in parent_text(2200)
+    assert '// twice improved 800' in result
 
 
 def test_closeups_keep_all_four_views_and_dark_parts():
