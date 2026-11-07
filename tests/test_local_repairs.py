@@ -1,7 +1,9 @@
 import asyncio
 import io
 import json
+import base64
 from decimal import Decimal
+from types import SimpleNamespace
 
 import pytest
 from PIL import Image, ImageDraw
@@ -59,6 +61,40 @@ def test_second_repair_cannot_spend_final_comparison_headroom():
     result = asyncio.run(search.surgical(parent, 'repair contour', ident=2100, outputs=32768, reserve=500000))
     assert result == [(parent, 'repair contour')]
     assert witness.trace == []
+
+
+def test_independent_drafts_are_not_given_an_arbitrary_incumbent_advantage():
+    class VisualWitness:
+        def __init__(self):
+            self.responses = self
+
+        async def create(self, **request):
+            rows, label = [], None
+            for item in request['input'][0]['content']:
+                if item['type'] == 'input_text' and item['text'].startswith('CANDIDATE '):
+                    label = item['text'].removeprefix('CANDIDATE ')
+                elif item['type'] == 'input_image' and label:
+                    image = Image.open(io.BytesIO(base64.b64decode(item['image_url'].split(',')[1])))
+                    penalty = .95 if image.getpixel((0, 0))[0] == 255 else 1.
+                    rows.append({'label': label, 'front': [penalty] * 4, 'feature_hits': 7,
+                                 'artifact': 0, 'bad_sides': 0, 'fixes': 'Measured image comparison'})
+                    label = None
+            return SimpleNamespace(status='completed', output_text=json.dumps({'scores': rows}),
+                                   usage=SimpleNamespace(input_tokens=1000, output_tokens=500))
+    parent = Candidate('blue', image_bytes(Image.new('RGB', (8, 8), 'blue')), SOURCE)
+    child = Candidate('red', image_bytes(Image.new('RGB', (8, 8), 'red')), SOURCE)
+    search = Search(png(), 42, VisualWitness())
+    assert asyncio.run(search.rank([parent, child], 100, incumbent=False))[0][0] is child
+    assert asyncio.run(search.rank([parent, child], 200))[0][0] is parent
+
+
+def test_mixed_model_drafts_are_charged_at_their_actual_model_rates():
+    search = Search(png(), 42, FakeWitness())
+    candidates = asyncio.run(search.initials())
+    assert len(candidates) == 5
+    # 2 Terra at 3500, 2 Sol at 7000, 1 Astra at 35000 per fake usage.
+    assert search.budget.spent == 56000
+    assert search.budget.calls == 5
 
 
 def image_bytes(image):

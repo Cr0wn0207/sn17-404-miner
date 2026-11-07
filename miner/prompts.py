@@ -21,7 +21,12 @@ largest components. Describe whether curves swell, taper, sag or flatten; descri
 negative spaces and wall/rim thickness as fractions of the overall size. Account
 for perspective instead of treating image-space width as an orthographic width.
 No code. Do not invent extra accessories, pedestals or background scenery.
-The target's identifying surface faces +Z; Y is up. Preserve real 3D volume."""
+Define axes from the PHOTO, not from an object's canonical front. +Z points toward
+the photo viewer, +X to photo-right, +Y up. Describe the object's long axis and its
+lean in that frame. A side/three-quarter view of a long object generally runs along
+X with a modest yaw, rather than pointing its whole length down Z. Estimate the
+camera elevation and which surfaces must stay visible in the four judge views.
+Preserve real 3D volume. The photo takes precedence over uncertain estimates."""
 
 BUILD = (
     """Create a polished, faithful, fully three-dimensional procedural replica
@@ -40,15 +45,20 @@ and UVs when textured. Prefer closed shells with real thickness, not intersectin
 flat patches. Text, when essential, must be constructed as procedural stroke
 geometry; no fonts, canvas, imported assets or baked reference pixels.
 Keep the object complete from the back, both sides, below and above. Render cameras
-view +Z from theta=30,330,0,0 with phi=0,0,15,-30. Face the distinctive part toward
-+Z and avoid obscuring it in those views. Do not add cameras, lights or a ground.
+view +Z from theta=30,330,0,0 with phi=0,0,15,-30. Match the PHOTO'S visible side,
+long axis, left-right direction and lean. Do not turn a photographed side view into
+an object's canonical front. Long side/three-quarter objects run predominantly
+along X, with a modest physical yaw matching the photo; a visible front face or
+dial faces the photo viewer at +Z. Preserve the complete true depth, back and
+underside. Do not add cameras, lights or a ground.
 Previews and judging use neutral lighting with a luminous environment: real metals
 can use metalness .7-1 and roughness .22-.5. Don't compensate for old studio lighting
 with black metal, excessive emission or diffuse fake reflections. Match target
 base colors, not photographic highlights. Use PBR mesh materials for meshes.
 Work in convenient natural dimensions. An external wrapper centers and fits the
 finished object to 98% of the unit cube, so do not squash proportions to fit.
-Use the brief's measured ratios as an explicit dimensional scaffold. Check the
+The brief is a provisional estimate: correct it wherever the photo contradicts it.
+Use photo-supported measured ratios as an explicit dimensional scaffold. Check the
 largest components and the spaces between them against the photo before detailed
 modeling. A cabinet must not become a narrow tower, a shallow vessel must not
 become a deep pot, and a curved body must not become a box with decorative parts.
@@ -62,12 +72,16 @@ Full enforced output rules follow:\n"""
 )
 
 STRATEGIES = (
-    "Prioritize a sculpted silhouette, curved profiles and carefully beveled edges.",
-    "Prioritize measured proportions and exact placement of the identifying parts.",
-    "Prioritize characteristic color regions, markings and physically plausible materials.",
-    "Use a fresh construction with smooth continuous surfaces and convincing negative space.",
-    "Check the part count, thickness and front/side silhouettes before adding small detail.",
-    "Use an independent reconstruction. Spend geometry on unusual identity-defining details.",
+    "Build a measured volumetric scaffold in the photo's pose. Use continuous curved cross-sections and "
+    "smooth connected shells for the largest body; preserve its changing contour, not a decorated box.",
+    "Reconstruct the silhouette and characteristic parts independently. Recheck the dominant dimensions, "
+    "overlaps, support contacts and repeated-part count from the actual photo.",
+    "Start an independent high-fidelity reconstruction from the photograph. Correct any mistaken brief. "
+    "Spend code on the principal shape, negative spaces and exact identifying features before texture noise.",
+    "Use a fresh geometric construction. Design rounded profiles, lofts and substantial attachment points "
+    "explicitly; ensure correct winding and smooth normals, and match the photographed direction.",
+    "Match the photo's actual color regions, visible openings, markings and material response while "
+    "retaining its full sculpted volume and supported natural arrangement.",
 )
 
 JUDGE = """Compare procedural 3D candidates to the reference photograph. Ignore

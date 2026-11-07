@@ -24,6 +24,9 @@ from .surgery import PATCH_SCHEMA, apply_edits
 
 SOL = "gpt-6.1-sol"
 ASTRA = "gpt-6-astra"
+TERRA = "gpt-6.1-terra"
+DRAFT_MODELS = ((TERRA, "xhigh", 44000), (SOL, "high", 24576),
+                (ASTRA, "high", 22000), (TERRA, "xhigh", 44000), (SOL, "high", 24576))
 FRONT = RenderOptions(thetas=(30, 330, 0, 0), phis=(0, 0, 15, -30), img_size=768, gap=0, bg_color="ffffff", lighting="neutral")
 GRAY = RenderOptions(thetas=(30, 330, 0, 0), phis=(0, 0, 15, -30), img_size=384, gap=0, bg_color="808080", lighting="neutral")
 SIDES = RenderOptions(
@@ -329,34 +332,34 @@ class Search:
         # change how many requests are admitted or how their usage is settled.
         requests = []
         reserved = 0
-        for i, strategy in enumerate(prompts.STRATEGIES):
+        for i, (strategy, (model, effort, outputs)) in enumerate(zip(prompts.STRATEGIES, DRAFT_MODELS, strict=True)):
             content = self.target() + [
                 {"type": "input_text", "text": "Construction brief:\n" + self.brief + "\nApproach: " + strategy}
             ]
-            upper = charge(SOL, input_bound(prompts.BUILD, content), 24576)
+            upper = charge(model, input_bound(prompts.BUILD, content), outputs)
             if (
-                self.budget.spent + reserved + upper + 2500000 > LIMIT - 100000
+                self.budget.spent + reserved + upper + 2200000 > LIMIT - 100000
                 or self.budget.calls + len(requests) + 1 > 60
             ):
                 break
             requests.append(
                 {
                     "request_id": 10 + i,
-                    "model": SOL,
+                    "model": model,
                     "instructions": prompts.BUILD,
                     "input": [{"role": "user", "content": content}],
                     "store": False,
                     "service_tier": "default",
-                    "reasoning": {"effort": "high"},
-                    "max_output_tokens": 24576,
+                    "reasoning": {"effort": effort},
+                    "max_output_tokens": outputs,
                 }
             )
             reserved += upper
         results = await asyncio.gather(*(self.witness.responses.create(**r) for r in requests), return_exceptions=True)
-        for result in results:
+        for request, result in zip(requests, results, strict=True):
             if isinstance(result, BaseException):
                 raise result
-            self.budget.consume(SOL, result)
+            self.budget.consume(request["model"], result)
         candidates = []
         for request, result in zip(requests, results):
             if result.status != "completed" or not result.output_text:
@@ -374,7 +377,7 @@ class Search:
                     }
                 )
                 repaired = await self.call(
-                    request["request_id"] + 10000, SOL, prompts.BUILD, content, 24576, reserve=2500000
+                    request["request_id"] + 10000, SOL, prompts.BUILD, content, 24576, reserve=2200000
                 )
                 if not repaired:
                     continue
@@ -385,7 +388,8 @@ class Search:
             candidates.append(candidate)
         return candidates
 
-    async def rank(self, candidates, ident, *, keep=1, mirror=True, reserve=0, distinct_lineages=False, compressed=False):
+    async def rank(self, candidates, ident, *, keep=1, mirror=True, reserve=0, distinct_lineages=False, compressed=False,
+                   incumbent=True):
         # The first candidate is the incumbent and wins close/noisy comparisons.
         candidates = list({c.source: c for c in candidates if c is not None}.values())
         if not candidates:
@@ -444,7 +448,11 @@ class Search:
         eligible = [i for i in range(1, len(candidates))
                     if means[i] < means[0] - 0.18
                     and all(a <= b + 0.1 for a, b in zip(scores[i], scores[0]))]
-        winner = min(eligible, key=lambda i: (means[i], i)) if eligible else 0
+        if incumbent:
+            winner = min(eligible, key=lambda i: (means[i], i)) if eligible else 0
+        else:
+            # Independent drafts have no previous validated winner to protect.
+            winner = min(range(len(candidates)), key=lambda i: (means[i], max(scores[i]), i))
         order = [winner] + sorted((i for i in indices if i != winner), key=lambda i: (means[i], i))
         selected = []
         for i in order:
@@ -525,7 +533,7 @@ async def generate(image, seed, witness):
     if brief:
         search.brief = brief
     candidates = await search.initials()
-    beam = await search.rank(candidates, 100, keep=3, distinct_lineages=True, reserve=2300000)
+    beam = await search.rank(candidates, 100, keep=3, distinct_lineages=True, reserve=2300000, incumbent=False)
     if not beam:
         return None
     children = await search.improve_stage(
