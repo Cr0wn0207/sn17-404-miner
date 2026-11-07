@@ -236,3 +236,16 @@ def test_missing_reverse_order_cannot_replace_parent(monkeypatch):
     child = Candidate('child', png(), SOURCE, 2)
     ranked = asyncio.run(search.rank([parent, child], 400))
     assert ranked == [(parent, '')]
+
+
+@pytest.mark.parametrize('stretch', [(0, 1, 1), (1, float('nan'), 1), (1, -1, 1), (1, 1)])
+def test_invalid_dimension_candidates_are_rejected(stretch):
+    with pytest.raises(ValueError):
+        normalize(SOURCE, stretch=stretch)
+
+
+def test_identical_rendered_variants_do_not_consume_judge_calls():
+    witness = FakeWitness()
+    asyncio.run(generate(png(), 9, witness))
+    ids = [v[1]['request_id'] for v in witness.trace if v[0] == 'call']
+    assert not any(i in ids for i in (1300, 1301, 1400, 1401))

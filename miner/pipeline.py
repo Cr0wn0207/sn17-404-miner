@@ -44,7 +44,7 @@ def bounded_png(data, size=1152):
         return out.getvalue()
 
 
-def normalize(raw, yaw=0, pitch=0):
+def normalize(raw, yaw=0, pitch=0, stretch=(1, 1, 1)):
     source = raw.strip()
     fence = re.fullmatch(r"```(?:javascript|js|mjs)?\s*\n([\s\S]*?)\n```", source)
     if fence:
@@ -53,11 +53,22 @@ def normalize(raw, yaw=0, pitch=0):
     match = re.match(r"export\s+default\s+(?=function\b)", source)
     if match is None or "__r3Build" in source:
         raise ValueError("Expected a default synchronous function first")
+    stretch = tuple(float(v) for v in stretch)
+    if len(stretch) != 3 or not all(math.isfinite(v) and v > 0 for v in stretch):
+        raise ValueError("Expected three finite positive dimension factors")
+    wrapper = WRAPPER
+    if pitch:
+        # An explicit pose candidate must actually rotate, including when the
+        # food, handle or garnish makes the complete object taller than .5 W.
+        wrapper = wrapper.replace("if (dimensions.y < 0.5 * Math.max(dimensions.x, dimensions.z)) {", "{")
+    if stretch != (1, 1, 1):
+        factors = ", ".join(format(v, ".12g") for v in stretch)
+        wrapper = wrapper.replace("  oriented.rotation.y =", "  oriented.scale.set(" + factors + ");\n  oriented.rotation.y =", 1)
     return (
         "const __r3Build = "
         + source[match.end() :]
         + "\n;\n"
-        + WRAPPER.replace("__R3_YAW__", format(float(yaw), ".12g")).replace("__R3_PITCH__", format(float(pitch), ".12g"))
+        + wrapper.replace("__R3_YAW__", format(float(yaw), ".12g")).replace("__R3_PITCH__", format(float(pitch), ".12g"))
     )
 
 
@@ -86,6 +97,13 @@ def front_closeups(data):
         return out.getvalue()
 
 
+def jpeg_url(data):
+    with Image.open(io.BytesIO(data)) as image:
+        out = io.BytesIO()
+        image.convert("RGB").save(out, format="JPEG", quality=92, subsampling=0)
+    return "data:image/jpeg;base64," + base64.b64encode(out.getvalue()).decode("ascii")
+
+
 def contact_sheet(front, gray, sides):
     sheet = Image.new("RGB", (1152, 768), "white")
     for data, box in ((front, (0, 0, 768, 768)), (gray, (768, 0, 1152, 384)), (sides, (768, 384, 1152, 768))):
@@ -104,6 +122,8 @@ class Candidate:
     raw: str
     lineage: int = 0
     detail: bytes = b""
+    pitch: float = 0
+    stretch: tuple = (1, 1, 1)
 
 
 class Search:
@@ -141,19 +161,19 @@ class Search:
             return None
         return result.output_text.strip()
 
-    def target(self):
+    def target(self, *, compressed=False):
         return [
             {"type": "input_text", "text": "REFERENCE IMAGE:"},
-            {"type": "input_image", "image_url": png_url(self.image), "detail": "high"},
+            {"type": "input_image", "image_url": (jpeg_url if compressed else png_url)(self.image), "detail": "high"},
         ]
 
-    async def render(self, raw, yaw=0, pitch=0, lineage=0):
-        source = normalize(raw, yaw, pitch)
+    async def render(self, raw, yaw=0, pitch=0, lineage=0, stretch=(1, 1, 1)):
+        source = normalize(raw, yaw, pitch, stretch)
         front = await self.witness.render(source, FRONT)
         gray = await self.witness.render(source, GRAY)
         sides = await self.witness.render(source, SIDES)
         detail = front_closeups(front)
-        return Candidate(source, contact_sheet(detail, gray, sides), raw, lineage, detail)
+        return Candidate(source, contact_sheet(detail, gray, sides), raw, lineage, detail, pitch, stretch)
 
     def construction(self, strategy, parent, feedback):
         content = self.target()
@@ -292,7 +312,7 @@ class Search:
             candidates.append(candidate)
         return candidates
 
-    async def rank(self, candidates, ident, *, keep=1, mirror=True, reserve=0, distinct_lineages=False):
+    async def rank(self, candidates, ident, *, keep=1, mirror=True, reserve=0, distinct_lineages=False, compressed=False):
         # The first candidate is the incumbent and wins close/noisy comparisons.
         candidates = list({c.source: c for c in candidates if c is not None}.values())
         if not candidates:
@@ -306,13 +326,13 @@ class Search:
         for order_index in range(2 if mirror else 1):
             order = indices if order_index == 0 else list(reversed(indices))
             labels = {chr(65 + j): i for j, i in enumerate(order)}
-            content = self.target()
+            content = self.target(compressed=compressed)
             content.append({"type": "input_text", "text": "Construction brief:\n" + self.brief})
             for label, i in labels.items():
                 content.extend(
                     [
                         {"type": "input_text", "text": "CANDIDATE " + label},
-                        {"type": "input_image", "image_url": png_url(candidates[i].sheet), "detail": "high"},
+                        {"type": "input_image", "image_url": (jpeg_url if compressed else png_url)(candidates[i].sheet), "detail": "high"},
                     ]
                 )
             raw = await self.call(
@@ -463,12 +483,25 @@ async def generate(image, seed, witness):
                      "Keep established correct geometry and leave safe validation headroom.")
         beam = await search.rank([c for c, _ in beam] + children, selection, reserve=100000)
     winner = beam[0][0]
-    # Flat-object presentation is optional and judged as an actual rendered
-    # alternative. The main reconstruction remains level unless it visibly wins.
-    try:
-        posed = await search.render(winner.raw, pitch=math.pi / 12, lineage=winner.lineage)
-    except (RenderRejected, ValueError):
-        posed = None
-    winner, _ = await search.select([winner, posed], 1200)
+    # Bounded numeric proportion search is evaluated on complete 3D assets.
+    # Keep the untouched parent whenever a distortion is worse or ambiguous.
+    variants = [winner]
+    for stretch in ((.88, 1, 1), (1.12, 1, 1), (1, .88, 1), (1, 1.12, 1)):
+        try:
+            candidate = await search.render(winner.raw, lineage=winner.lineage, stretch=stretch)
+        except (RenderRejected, ValueError):
+            continue
+        if candidate.sheet != winner.sheet:
+            variants.append(candidate)
+    winner, _ = (await search.rank(variants, 1300, compressed=True, reserve=200000))[0]
+    variants = [winner]
+    for pitch in (-math.pi / 12, math.pi / 12):
+        try:
+            candidate = await search.render(winner.raw, pitch=pitch, lineage=winner.lineage, stretch=winner.stretch)
+        except (RenderRejected, ValueError):
+            continue
+        if candidate.sheet != winner.sheet:
+            variants.append(candidate)
+    winner, _ = (await search.rank(variants, 1400, compressed=True))[0]
     # This is exactly the source that was rendered, not a post-selection rewrite.
     return winner.source
