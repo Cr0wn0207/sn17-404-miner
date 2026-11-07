@@ -9,7 +9,7 @@ import pytest
 from PIL import Image, ImageDraw
 
 from miner.alignment import foreground, similarity
-from miner.pipeline import Candidate, Search
+from miner.pipeline import Candidate, Search, reference_closeup
 from miner.surgery import apply_edits
 from test_invariants import FakeWitness, SOURCE, png
 
@@ -65,8 +65,9 @@ def test_second_repair_cannot_spend_final_comparison_headroom():
 
 def test_independent_drafts_are_not_given_an_arbitrary_incumbent_advantage():
     class VisualWitness:
-        def __init__(self):
+        def __init__(self, red_front=None):
             self.responses = self
+            self.red_front = red_front or [.95] * 4
 
         async def create(self, **request):
             rows, label = [], None
@@ -75,8 +76,8 @@ def test_independent_drafts_are_not_given_an_arbitrary_incumbent_advantage():
                     label = item['text'].removeprefix('CANDIDATE ')
                 elif item['type'] == 'input_image' and label:
                     image = Image.open(io.BytesIO(base64.b64decode(item['image_url'].split(',')[1])))
-                    penalty = .95 if image.getpixel((0, 0))[0] == 255 else 1.
-                    rows.append({'label': label, 'front': [penalty] * 4, 'feature_hits': 7,
+                    front = self.red_front if image.getpixel((0, 0))[0] == 255 else [1.] * 4
+                    rows.append({'label': label, 'front': front, 'feature_hits': 7,
                                  'artifact': 0, 'bad_sides': 0, 'fixes': 'Measured image comparison'})
                     label = None
             return SimpleNamespace(status='completed', output_text=json.dumps({'scores': rows}),
@@ -86,6 +87,13 @@ def test_independent_drafts_are_not_given_an_arbitrary_incumbent_advantage():
     search = Search(png(), 42, VisualWitness())
     assert asyncio.run(search.rank([parent, child], 100, incumbent=False))[0][0] is child
     assert asyncio.run(search.rank([parent, child], 200))[0][0] is parent
+    # A consistent 0.15 gain per front view is below the scalar 0.18 switch
+    # margin, but dominates the parent in every measured criterion and order.
+    search = Search(png(), 42, VisualWitness([.85] * 4))
+    assert asyncio.run(search.rank([parent, child], 300))[0][0] is child
+    # One degraded view blocks that smaller step, even when its mean is better.
+    search = Search(png(), 42, VisualWitness([1.1, .85, .85, .85]))
+    assert asyncio.run(search.rank([parent, child], 400))[0][0] is parent
 
 
 def test_mixed_model_drafts_are_charged_at_their_actual_model_rates():
@@ -101,6 +109,26 @@ def image_bytes(image):
     buffer = io.BytesIO()
     image.save(buffer, 'PNG')
     return buffer.getvalue()
+
+
+def test_reference_detail_retains_thin_parts_and_always_supplements_the_full_photo():
+    image = Image.new('RGB', (800, 800), 'white')
+    draw = ImageDraw.Draw(image)
+    draw.rectangle((400, 140, 403, 760), fill=(110, 70, 25))
+    draw.rectangle((404, 140, 550, 300), fill='red')
+    data = image_bytes(image)
+    detail = reference_closeup(data)
+    assert detail is not None
+    with Image.open(io.BytesIO(detail)) as crop:
+        assert max(crop.size) == 1152
+        brown = [(x, y) for y in range(crop.height) for x in range(crop.width)
+                 if crop.getpixel((x, y)) == (110, 70, 25)]
+        assert brown and max(y for x, y in brown) > .90 * crop.height
+    search = Search(data, 42, FakeWitness())
+    images = [v['image_url'] for v in search.target() if v['type'] == 'input_image']
+    assert len(images) == 2
+    assert base64.b64decode(images[0].split(',')[1]) == search.image
+    assert reference_closeup(png()) is None
 
 
 def test_alignment_compares_shape_without_rewarding_translation_or_canvas_fill():

@@ -32,6 +32,13 @@ BUILD = (
     """Create a polished, faithful, fully three-dimensional procedural replica
 of the target object, not a generic member of its category. Start with exactly
 `export default function generate(THREE) {` and return only a complete ES module.
+For a visually complex subject, implement its actual construction in depth:
+complete curved profiles, substantial connecting parts, distinctive repeated
+elements and visible surface patterns. Several thousand tokens of coherent code
+can be appropriate; a handful of decorated primitives cannot substitute for the
+observed shape. Spend code on real evidence, not verbosity or decorative noise.
+Simple subjects should remain simple. Use the enlarged REFERENCE PHOTO detail to
+read contours, markings and attachment shapes before looking at generated views.
 No Markdown. First reason about object silhouette and ratios; allocate most detail
 to the SEVEN identifying features in the brief. Large shape errors dominate tiny
 surface detail. Preserve thin rims, holes, curved profiles, attachment points,

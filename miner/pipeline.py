@@ -12,6 +12,7 @@ import io
 import json
 import math
 import re
+import statistics
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -47,6 +48,38 @@ def bounded_png(data, size=1152):
         im.thumbnail((size, size), Image.Resampling.LANCZOS)
         out = io.BytesIO()
         im.save(out, format="PNG", optimize=False, compress_level=6)
+        return out.getvalue()
+
+
+def reference_closeup(data):
+    """Supplement the full reference, retaining thin parts and modest padding."""
+    with Image.open(io.BytesIO(data)) as image:
+        image = image.convert("RGB")
+        width, height = image.size
+        edge = [image.getpixel((x, y)) for x in range(width) for y in (0, height - 1)]
+        edge += [image.getpixel((x, y)) for y in range(height) for x in (0, width - 1)]
+        background = tuple(int(statistics.median(p[c] for p in edge)) for c in range(3))
+        if sum(sum(abs(p[c] - background[c]) for c in range(3)) for p in edge) > len(edge) * 36:
+            return None
+        difference = ImageChops.difference(image, Image.new("RGB", image.size, background))
+        channels = difference.split()
+        mask = ImageChops.lighter(ImageChops.lighter(channels[0], channels[1]), channels[2])
+        mask = mask.point(lambda v: 255 if v > 32 else 0)
+        occupancy = sum(mask.histogram()[1:]) / (width * height)
+        if not .015 < occupancy < .90:
+            return None
+        box = mask.getbbox()
+        padding = max(6, math.ceil(.08 * max(box[2] - box[0], box[3] - box[1])))
+        box = (max(0, box[0] - padding), max(0, box[1] - padding),
+               min(width, box[2] + padding), min(height, box[3] + padding))
+        if box == (0, 0, width, height):
+            return None
+        detail = image.crop(box)
+        scale = 1152 / max(detail.size)
+        detail = detail.resize((max(1, round(detail.width * scale)), max(1, round(detail.height * scale))),
+                               Image.Resampling.LANCZOS)
+        out = io.BytesIO()
+        detail.save(out, "PNG", optimize=False, compress_level=6)
         return out.getvalue()
 
 
@@ -136,6 +169,7 @@ class Candidate:
 class Search:
     def __init__(self, image, seed, witness):
         self.image = bounded_png(image)
+        self.reference_detail = reference_closeup(self.image)
         self.seed = seed
         self.identity = hashlib.sha256(image).hexdigest()
         self.witness = witness
@@ -169,10 +203,19 @@ class Search:
         return result.output_text.strip()
 
     def target(self, *, compressed=False):
-        return [
+        content = [
             {"type": "input_text", "text": "REFERENCE IMAGE:"},
             {"type": "input_image", "image_url": (jpeg_url if compressed else png_url)(self.image), "detail": "high"},
         ]
+        if self.reference_detail:
+            content.extend([
+                {"type": "input_text", "text": "DETAIL CROP FROM THE SAME REFERENCE PHOTO. Inspect part shapes, "
+                 "materials and markings here; the full photo above remains authoritative for the complete object, "
+                 "thin parts, pose and overall proportions."},
+                {"type": "input_image", "image_url": (jpeg_url if compressed else png_url)(self.reference_detail),
+                 "detail": "high"},
+            ])
+        return content
 
     async def render(self, raw, yaw=0, pitch=0, lineage=0, stretch=(1, 1, 1)):
         source = normalize(raw, yaw, pitch, stretch)
@@ -338,7 +381,7 @@ class Search:
             ]
             upper = charge(model, input_bound(prompts.BUILD, content), outputs)
             if (
-                self.budget.spent + reserved + upper + 2200000 > LIMIT - 100000
+                self.budget.spent + reserved + upper + 2000000 > LIMIT - 100000
                 or self.budget.calls + len(requests) + 1 > 60
             ):
                 break
@@ -377,7 +420,7 @@ class Search:
                     }
                 )
                 repaired = await self.call(
-                    request["request_id"] + 10000, SOL, prompts.BUILD, content, 24576, reserve=2200000
+                    request["request_id"] + 10000, SOL, prompts.BUILD, content, 24576, reserve=2000000
                 )
                 if not repaired:
                     continue
@@ -400,6 +443,7 @@ class Search:
         indices.sort(key=lambda i: hashlib.sha256(f"{self.seed}:{self.identity}:{ident}:{i}".encode()).digest())
         scores = {i: [] for i in indices}
         notes = {i: [] for i in indices}
+        assessments = {i: [] for i in indices}
         for order_index in range(2 if mirror else 1):
             order = indices if order_index == 0 else list(reversed(indices))
             labels = {chr(65 + j): i for j, i in enumerate(order)}
@@ -432,6 +476,7 @@ class Search:
                 i = labels[row["label"]]
                 scores[i].append(score(row))
                 notes[i].append(row["fixes"])
+                assessments[i].append(row)
         # Require every candidate to have the same number of valid votes.
         counts = [len(scores[i]) for i in indices]
         if not counts or any(count != (2 if mirror else 1) for count in counts):
@@ -445,9 +490,24 @@ class Search:
         means = {i: sum(scores[i]) / len(scores[i]) for i in indices}
         # Compare every challenger directly with the incumbent. A chain of small
         # pairwise tolerances must not accumulate into a position-sensitive win.
+        def consistent_gain(index):
+            # Admit a small step only if BOTH orders see no worse criterion and
+            # at least a measurable front, identity or artifact improvement.
+            for child, parent in zip(assessments[index], assessments[0], strict=True):
+                if (any(a > b for a, b in zip(child["front"], parent["front"], strict=True))
+                        or child["feature_hits"] < parent["feature_hits"]
+                        or child["artifact"] > parent["artifact"]
+                        or child["bad_sides"] > parent["bad_sides"]):
+                    return False
+                if not (sum(parent["front"]) - sum(child["front"]) >= .4 - 1e-9
+                        or child["feature_hits"] > parent["feature_hits"]
+                        or parent["artifact"] - child["artifact"] >= .2 - 1e-9):
+                    return False
+            return True
         eligible = [i for i in range(1, len(candidates))
-                    if means[i] < means[0] - 0.18
-                    and all(a <= b + 0.1 for a, b in zip(scores[i], scores[0]))]
+                    if (means[i] < means[0] - 0.18
+                        and all(a <= b + 0.1 for a, b in zip(scores[i], scores[0])))
+                    or consistent_gain(i)]
         if incumbent:
             winner = min(eligible, key=lambda i: (means[i], i)) if eligible else 0
         else:
