@@ -9,7 +9,7 @@ from PIL import Image
 from renderer_client import RenderRejected
 
 from miner.budget import Budget, charge
-from miner.pipeline import Candidate, Search, generate, normalize, parse_scores
+from miner.pipeline import Candidate, Search, front_closeups, generate, normalize, parse_scores
 
 
 def png():
@@ -174,3 +174,65 @@ def test_normalization_keeps_helpers_and_single_export():
 
 def test_markdown_module_is_unwrapped():
     assert normalize("```js\n" + SOURCE + "\n```") == normalize(SOURCE)
+
+
+def test_beam_keeps_different_geometric_lineages():
+    search = Search(png(), 9, FakeWitness())
+    candidates = [Candidate(str(i), png(), SOURCE, lineage) for i, lineage in enumerate((10, 10, 11, 12))]
+    result = asyncio.run(search.rank(candidates, 100, keep=3, distinct_lineages=True))
+    assert [c.lineage for c, _ in result] == [10, 11, 12]
+
+
+def test_parallel_stage_reserves_all_dispatched_outputs_before_awaiting():
+    witness = FakeWitness()
+    search = Search(png(), 9, witness)
+    # One Astra call fits, two cannot fit even though fake responses are cheap.
+    search.budget.spent = Decimal(1600000)
+    parents = [(Candidate(str(i), png(), SOURCE, i), "") for i in range(3)]
+    children = asyncio.run(search.improve_stage(parents, 400, model="gpt-6-astra", reserve=1000000))
+    ids = [v[1]['request_id'] for v in witness.trace if v[0] == 'call']
+    assert ids == [400]
+    assert len(children) == 1
+
+
+def test_late_improvements_receive_the_selected_preceding_source(monkeypatch):
+    async def pick_latest(self, candidates, ident, *, keep=1, **kwargs):
+        usable = [c for c in candidates if c is not None]
+        return [(c, "Check proportions") for c in usable[-keep:]]
+
+    monkeypatch.setattr(Search, 'rank', pick_latest)
+    witness = FakeWitness()
+    result = asyncio.run(generate(png(), 9, witness))
+    calls = {v[1]['request_id']: v[1] for v in witness.trace if v[0] == 'call'}
+    parent_text = lambda ident: '\n'.join(v.get('text', '') for v in calls[ident]['input'][0]['content'])
+    assert '// draft 601' in parent_text(800)
+    assert '// draft 800' in parent_text(1000)
+    assert all(calls[i]['reasoning']['effort'] == 'xhigh' for i in (600, 601, 800, 1000))
+    assert result is not None
+
+
+def test_closeups_keep_all_four_views_and_dark_parts():
+    image = Image.new('RGB', (400, 400), 'white')
+    for x, y, color in ((50, 50, 'black'), (250, 50, 'red'), (50, 250, 'green'), (250, 250, 'blue')):
+        image.paste(color, (x, y, x + 60, y + 80))
+    b = io.BytesIO();image.save(b, 'PNG')
+    with Image.open(io.BytesIO(front_closeups(b.getvalue()))) as out:
+        assert out.size == (1152, 1152)
+        assert [out.getpixel((x, y)) for x, y in ((288, 288), (864, 288), (288, 864), (864, 864))] == [(0, 0, 0), (255, 0, 0), (0, 128, 0), (0, 0, 255)]
+
+
+def test_missing_reverse_order_cannot_replace_parent(monkeypatch):
+    search = Search(png(), 9, FakeWitness())
+    calls = []
+    async def partial_call(ident, *args, **kwargs):
+        calls.append(ident)
+        if len(calls) == 2:
+            return None
+        labels = kwargs['schema']['properties']['scores']['items']['properties']['label']['enum']
+        return json.dumps({'scores': [{'label': label, 'front': [0, 0, 0, 0],
+            'feature_hits': 7, 'artifact': 0, 'bad_sides': 0, 'fixes': ''} for label in labels]})
+    monkeypatch.setattr(search, 'call', partial_call)
+    parent = Candidate('parent', png(), SOURCE, 1)
+    child = Candidate('child', png(), SOURCE, 2)
+    ranked = asyncio.run(search.rank([parent, child], 400))
+    assert ranked == [(parent, '')]

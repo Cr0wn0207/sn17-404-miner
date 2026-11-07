@@ -15,7 +15,7 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-from PIL import Image
+from PIL import Image, ImageChops
 from renderer_client import RenderOptions, RenderRejected
 
 from . import prompts
@@ -23,10 +23,10 @@ from .budget import LIMIT, Budget, charge, input_bound
 
 SOL = "gpt-6.1-sol"
 ASTRA = "gpt-6-astra"
-FRONT = RenderOptions(thetas=(30, 330, 0, 0), phis=(0, 0, 15, -30), img_size=384, bg_color="ffffff", lighting="neutral")
-GRAY = RenderOptions(thetas=(30, 330, 0, 0), phis=(0, 0, 15, -30), img_size=256, bg_color="808080", lighting="neutral")
+FRONT = RenderOptions(thetas=(30, 330, 0, 0), phis=(0, 0, 15, -30), img_size=768, gap=0, bg_color="ffffff", lighting="neutral")
+GRAY = RenderOptions(thetas=(30, 330, 0, 0), phis=(0, 0, 15, -30), img_size=384, gap=0, bg_color="808080", lighting="neutral")
 SIDES = RenderOptions(
-    thetas=(90, 180, 270, 0), phis=(0, 0, 0, -90), img_size=256, bg_color="ffffff", lighting="neutral"
+    thetas=(90, 180, 270, 0), phis=(0, 0, 0, -90), img_size=384, gap=0, bg_color="ffffff", lighting="neutral"
 )
 WRAPPER = Path(__file__).with_name("normalize.js").read_text()
 
@@ -44,7 +44,7 @@ def bounded_png(data, size=1152):
         return out.getvalue()
 
 
-def normalize(raw, yaw=0):
+def normalize(raw, yaw=0, pitch=0):
     source = raw.strip()
     fence = re.fullmatch(r"```(?:javascript|js|mjs)?\s*\n([\s\S]*?)\n```", source)
     if fence:
@@ -57,8 +57,33 @@ def normalize(raw, yaw=0):
         "const __r3Build = "
         + source[match.end() :]
         + "\n;\n"
-        + WRAPPER.replace("__R3_YAW__", format(float(yaw), ".12g"))
+        + WRAPPER.replace("__R3_YAW__", format(float(yaw), ".12g")).replace("__R3_PITCH__", format(float(pitch), ".12g"))
     )
+
+
+def front_closeups(data):
+    """Enlarge each original front view independently; never change geometry."""
+    with Image.open(io.BytesIO(data)) as image:
+        image = image.convert("RGB")
+        output = Image.new("RGB", (1152, 1152), "white")
+        for index in range(4):
+            x, y = index % 2, index // 2
+            tile = image.crop((x * image.width // 2, y * image.height // 2,
+                               (x + 1) * image.width // 2, (y + 1) * image.height // 2))
+            difference = ImageChops.difference(tile, Image.new("RGB", tile.size, "white"))
+            channels = difference.split()
+            mask = ImageChops.lighter(ImageChops.lighter(channels[0], channels[1]), channels[2])
+            box = mask.point(lambda v: 255 if v > 24 else 0).getbbox()
+            if box:
+                margin = max(4, math.ceil(0.07 * max(box[2] - box[0], box[3] - box[1])))
+                box = (max(0, box[0] - margin), max(0, box[1] - margin),
+                       min(tile.width, box[2] + margin), min(tile.height, box[3] + margin))
+                tile = tile.crop(box)
+            tile.thumbnail((560, 560), Image.Resampling.LANCZOS)
+            output.paste(tile, (x * 576 + (576 - tile.width) // 2, y * 576 + (576 - tile.height) // 2))
+        out = io.BytesIO()
+        output.save(out, format="PNG", optimize=False, compress_level=6)
+        return out.getvalue()
 
 
 def contact_sheet(front, gray, sides):
@@ -77,6 +102,8 @@ class Candidate:
     source: str
     sheet: bytes
     raw: str
+    lineage: int = 0
+    detail: bytes = b""
 
 
 class Search:
@@ -120,14 +147,15 @@ class Search:
             {"type": "input_image", "image_url": png_url(self.image), "detail": "high"},
         ]
 
-    async def render(self, raw, yaw=0):
-        source = normalize(raw, yaw)
+    async def render(self, raw, yaw=0, pitch=0, lineage=0):
+        source = normalize(raw, yaw, pitch)
         front = await self.witness.render(source, FRONT)
         gray = await self.witness.render(source, GRAY)
         sides = await self.witness.render(source, SIDES)
-        return Candidate(source, contact_sheet(front, gray, sides), raw)
+        detail = front_closeups(front)
+        return Candidate(source, contact_sheet(detail, gray, sides), raw, lineage, detail)
 
-    async def build(self, ident, *, model=SOL, strategy="", parent=None, feedback="", reserve=500000):
+    def construction(self, strategy, parent, feedback):
         content = self.target()
         text = "Construction brief:\n" + self.brief + "\nApproach: " + strategy
         if parent:
@@ -137,12 +165,17 @@ class Search:
                 "Specific corrections:\n" + feedback + "\nCurrent module:\n" + parent.raw
             )
             content.append({"type": "input_image", "image_url": png_url(parent.sheet), "detail": "high"})
+            if parent.detail:
+                content.append({"type": "input_text", "text": "ENLARGED ORIGINAL FRONT VIEWS; inspect silhouette, ratios, thickness and material details."})
+                content.append({"type": "input_image", "image_url": png_url(parent.detail), "detail": "high"})
         content.append({"type": "input_text", "text": text})
-        raw = await self.call(ident, model, prompts.BUILD, content, 24576, reserve=reserve)
+        return content
+
+    async def finish(self, ident, raw, content, *, lineage, reserve):
         if raw is None:
             return None
         try:
-            return await self.render(raw)
+            return await self.render(raw, lineage=lineage)
         except (RenderRejected, ValueError) as error:
             # Only reproducible validation rejections or source-shape errors are
             # eligible for one bounded repair. Infrastructure failures propagate.
@@ -157,9 +190,46 @@ class Search:
             if repair is None:
                 return None
             try:
-                return await self.render(repair)
+                return await self.render(repair, lineage=lineage)
             except (RenderRejected, ValueError):
                 return None
+
+    async def build(self, ident, *, model=SOL, strategy="", parent=None, feedback="", reserve=500000,
+                    effort="high", outputs=24576):
+        content = self.construction(strategy, parent, feedback)
+        raw = await self.call(ident, model, prompts.BUILD, content, outputs, reserve=reserve, effort=effort)
+        return await self.finish(ident, raw, content, lineage=parent.lineage if parent else ident, reserve=reserve)
+
+    async def improve_stage(self, parents, ident, *, model=SOL, effort="high", outputs=24576,
+                            reserve=0, strategy=""):
+        """Reserve the whole parallel stage and settle in stable parent order."""
+        requests = []
+        reserved = 0
+        for index, (parent, feedback) in enumerate(parents):
+            content = self.construction(strategy, parent, feedback)
+            upper = charge(model, input_bound(prompts.BUILD, content), outputs)
+            if (self.budget.spent + reserved + upper + reserve > LIMIT - 100000
+                    or self.budget.calls + len(requests) + 1 > 60):
+                break
+            params = dict(request_id=ident + index, model=model, instructions=prompts.BUILD,
+                          input=[{"role": "user", "content": content}], store=False, service_tier="default",
+                          reasoning={"effort": effort}, max_output_tokens=outputs)
+            requests.append((params, parent))
+            reserved += upper
+        responses = await asyncio.gather(*(self.witness.responses.create(**r) for r, _ in requests),
+                                         return_exceptions=True)
+        for response in responses:
+            if isinstance(response, BaseException):
+                raise response
+            self.budget.consume(model, response)
+        children = []
+        for (params, parent), response in zip(requests, responses):
+            raw = response.output_text.strip() if response.status == "completed" and response.output_text else None
+            child = await self.finish(params["request_id"], raw, list(params["input"][0]["content"]),
+                                      lineage=parent.lineage, reserve=reserve)
+            if child is not None:
+                children.append(child)
+        return children
 
     async def initials(self):
         # Reserve the WHOLE stage before dispatch. No response arrival order can
@@ -172,7 +242,7 @@ class Search:
             ]
             upper = charge(SOL, input_bound(prompts.BUILD, content), 24576)
             if (
-                self.budget.spent + reserved + upper + 1800000 > LIMIT - 100000
+                self.budget.spent + reserved + upper + 2500000 > LIMIT - 100000
                 or self.budget.calls + len(requests) + 1 > 60
             ):
                 break
@@ -200,7 +270,7 @@ class Search:
                 continue
             raw = result.output_text.strip()
             try:
-                candidate = await self.render(raw)
+                candidate = await self.render(raw, lineage=request["request_id"])
             except (RenderRejected, ValueError) as error:
                 detail = error.detail_json if isinstance(error, RenderRejected) else str(error)
                 content = list(request["input"][0]["content"])
@@ -211,24 +281,24 @@ class Search:
                     }
                 )
                 repaired = await self.call(
-                    request["request_id"] + 10000, SOL, prompts.BUILD, content, 24576, reserve=1800000
+                    request["request_id"] + 10000, SOL, prompts.BUILD, content, 24576, reserve=2500000
                 )
                 if not repaired:
                     continue
                 try:
-                    candidate = await self.render(repaired)
+                    candidate = await self.render(repaired, lineage=request["request_id"])
                 except (RenderRejected, ValueError):
                     continue
             candidates.append(candidate)
         return candidates
 
-    async def select(self, candidates, ident, *, mirror=True):
+    async def rank(self, candidates, ident, *, keep=1, mirror=True, reserve=0, distinct_lineages=False):
         # The first candidate is the incumbent and wins close/noisy comparisons.
         candidates = list({c.source: c for c in candidates if c is not None}.values())
         if not candidates:
-            return None, ""
+            return []
         if len(candidates) == 1:
-            return candidates[0], ""
+            return [(candidates[0], "")]
         indices = list(range(len(candidates)))
         indices.sort(key=lambda i: hashlib.sha256(f"{self.seed}:{self.identity}:{ident}:{i}".encode()).digest())
         scores = {i: [] for i in indices}
@@ -253,6 +323,7 @@ class Search:
                 4096,
                 schema=score_schema(list(labels)),
                 effort="medium",
+                reserve=reserve,
             )
             if raw is None:
                 continue
@@ -266,16 +337,34 @@ class Search:
                 notes[i].append(row["fixes"])
         # Require every candidate to have the same number of valid votes.
         counts = [len(scores[i]) for i in indices]
-        if not counts or not min(counts) or len(set(counts)) != 1:
-            return candidates[0], ""
+        if not counts or any(count != (2 if mirror else 1) for count in counts):
+            fallback = []
+            for candidate in candidates:
+                if not distinct_lineages or all(candidate.lineage != c.lineage for c, _ in fallback):
+                    fallback.append((candidate, ""))
+                if len(fallback) == keep:
+                    break
+            return fallback
         means = {i: sum(scores[i]) / len(scores[i]) for i in indices}
-        winner = 0
-        for i in range(1, len(candidates)):
-            # In AB/BA, demand agreement over the incumbent as well as a useful
-            # mean gain; a position-sensitive win cannot replace a good parent.
-            if means[i] < means[winner] - 0.18 and all(a <= b + 0.1 for a, b in zip(scores[i], scores[winner])):
-                winner = i
-        return candidates[winner], "\n".join(notes[winner])
+        # Compare every challenger directly with the incumbent. A chain of small
+        # pairwise tolerances must not accumulate into a position-sensitive win.
+        eligible = [i for i in range(1, len(candidates))
+                    if means[i] < means[0] - 0.18
+                    and all(a <= b + 0.1 for a, b in zip(scores[i], scores[0]))]
+        winner = min(eligible, key=lambda i: (means[i], i)) if eligible else 0
+        order = [winner] + sorted((i for i in indices if i != winner), key=lambda i: (means[i], i))
+        selected = []
+        for i in order:
+            if distinct_lineages and any(c.lineage == candidates[i].lineage for c, _ in selected):
+                continue
+            selected.append((candidates[i], "\n".join(notes[i])))
+            if len(selected) == keep:
+                break
+        return selected
+
+    async def select(self, candidates, ident, *, mirror=True):
+        ranked = await self.rank(candidates, ident, mirror=mirror)
+        return ranked[0] if ranked else (None, "")
 
 
 def score_schema(labels):
@@ -343,30 +432,43 @@ async def generate(image, seed, witness):
     if brief:
         search.brief = brief
     candidates = await search.initials()
-    winner, feedback = await search.select(candidates, 100)
-    if winner is None:
+    beam = await search.rank(candidates, 100, keep=3, distinct_lineages=True, reserve=2300000)
+    if not beam:
         return None
-    original = winner
-    # Spend the strongest model on improving an already rendered reconstruction.
-    improved = await search.build(
-        200,
-        model=ASTRA,
-        parent=winner,
-        feedback=feedback,
-        strategy="Correct silhouette and identity before polishing.",
-        reserve=700000,
-    )
-    if improved is None:
-        improved = await search.build(201, parent=winner, feedback=feedback, reserve=700000)
-    winner, feedback = await search.select([winner, improved], 210)
-    refined = []
-    for ident, strategy in (
-        (300, "Correct the two largest proportion or shape errors; preserve identity."),
-        (301, "Improve the seven key details, curves and surface colors without losing proportions."),
-    ):
-        candidate = await search.build(ident, parent=winner, feedback=feedback, strategy=strategy, reserve=400000)
-        if candidate:
-            refined.append(candidate)
-    winner, _ = await search.select([winner, *refined, original], 400)
+    children = await search.improve_stage(
+        beam, 200, reserve=2100000,
+        strategy="PROPORTION PASS: re-measure overall width:height:depth and the three largest parts against the photo. "
+                 "Correct silhouette, curvature, openings and thickness before adding small marks. Preserve actual part counts.")
+    beam = await search.rank([c for c, _ in beam] + children, 300, keep=2,
+                             distinct_lineages=True, reserve=1900000)
+    children = await search.improve_stage(
+        beam, 400, model=ASTRA, reserve=1350000,
+        strategy="Sculpt the defining shape and identifying features. Use the enlarged front views to fix "
+                 "the largest remaining geometric errors; preserve successful proportions and visible color regions.")
+    beam = await search.rank([c for c, _ in beam] + children, 500, keep=2,
+                             distinct_lineages=True, reserve=1100000)
+    children = await search.improve_stage(
+        beam, 600, effort="xhigh", outputs=44000, reserve=700000,
+        strategy="HIGH QUALITY RECONSTRUCTION: carefully reason through all major ratios and curved contours, "
+                 "then implement a complete improved model. Match the actual object rather than its generic category. "
+                 "Preserve identity, material regions and real volume; avoid spending the budget on invisible tessellation.")
+    beam = await search.rank([c for c, _ in beam] + children, 700, reserve=600000)
+    # These are sequential improvements: each step receives the selected result
+    # and critique from the preceding stage, rather than making sibling rewrites.
+    for ident, selection in ((800, 900), (1000, 1100)):
+        children = await search.improve_stage(
+            beam, ident, effort="xhigh", outputs=44000, reserve=180000,
+            strategy="FINAL LIKENESS PASS: fix the most consequential remaining mismatch shown in the photo "
+                     "and enlarged previews. Check ratios, contour transitions, identifying part sizes and material tones. "
+                     "Keep established correct geometry and leave safe validation headroom.")
+        beam = await search.rank([c for c, _ in beam] + children, selection, reserve=100000)
+    winner = beam[0][0]
+    # Flat-object presentation is optional and judged as an actual rendered
+    # alternative. The main reconstruction remains level unless it visibly wins.
+    try:
+        posed = await search.render(winner.raw, pitch=math.pi / 12, lineage=winner.lineage)
+    except (RenderRejected, ValueError):
+        posed = None
+    winner, _ = await search.select([winner, posed], 1200)
     # This is exactly the source that was rendered, not a post-selection rewrite.
     return winner.source
