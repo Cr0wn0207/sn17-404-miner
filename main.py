@@ -1,6 +1,25 @@
 """Root competition entry point and official witness batch launcher."""
 
-from miner.pipeline import generate
+import asyncio
+from miner404.pipeline import run as run_pipeline
+from miner404.versions import ACTIVE_PLAN
+
+
+class WitnessBridge:
+    """Use only the runtime supplied witness; never access credentials in generation."""
+    def __init__(self, witness, loop):
+        self.witness, self.loop = witness, loop
+
+    def create(self, **params):
+        return asyncio.run_coroutine_threadsafe(self.witness.responses.create(**params), self.loop).result()
+
+    def render(self, source, options):
+        return asyncio.run_coroutine_threadsafe(self.witness.render(source, options), self.loop).result()
+
+
+async def generate(image: bytes, seed: int, witness) -> str | None:
+    bridge = WitnessBridge(witness, asyncio.get_running_loop())
+    return await asyncio.to_thread(run_pipeline, image, seed, bridge, bridge, ACTIVE_PLAN)
 
 __all__ = ["generate"]
 

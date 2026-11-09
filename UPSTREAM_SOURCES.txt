@@ -1,0 +1,17 @@
+V29 source provenance
+
+The miner404 package is adopted verbatim from the public registered source:
+  bottleneck-earbud/heron-quay
+  eb76932647f2c499770da16023acca9ac2c0b8a9
+  https://github.com/bottleneck-earbud/heron-quay/tree/eb76932647f2c499770da16023acca9ac2c0b8a9/miner404
+
+Related source: SmoothTight/newvictor, 0f4bc9370c083b8808e4d78645fe3892e67338a2.
+We preserve the package bytes to establish a reproducible baseline before ablations.
+This provenance statement does not assert authorship or a new license for upstream files.
+Existing LICENSE and UPSTREAM_LICENSE describe the pre-existing project components.
+Git blob hashes and source manifests are preserved in the research evidence bundle.
+
+Our integration consists of the async runtime bridge, packaging, selected-wallet launcher,
+Codex witness configuration, tests and separate development evaluation driver.
+The old miner package is retained for baseline comparisons; main.generate uses miner404.
+Do not import experiments or read saved generated outputs from main.generate.

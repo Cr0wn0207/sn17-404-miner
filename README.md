@@ -1,3 +1,34 @@
+# V29: dual-lineage generator
+
+This version adopts the reviewed heron-quay engine at registered commit
+`eb76932647f2c499770da16023acca9ac2c0b8a9`; see `UPSTREAM_SOURCES.txt`.
+
+Six Sol drafts preserve two distinct starts. Both lineages receive up to six
+Sol/Astra rewrite stages with high-resolution cropped render feedback, followed
+by pose, geometry-fit and metallic-material adjustments. Budget admission can
+skip stages. The current entry point is `main.generate` using `miner404`.
+
+The upstream +0.359375 Round 3 margin is upstream's observed result, not this
+version's measured result. V29 quality is unverified until fresh generation and
+independent comparison complete. Local proxy evaluations are not official margins.
+Round 3 registration and generation have closed; V29 is for a future registration.
+No automatic chain registration, proof upload or source publication is performed.
+
+The local `witness.json` uses the already configured Codex subscription login.
+Do not include credentials, witness caches, generated outputs or private sessions
+in a published source package. The previous miner package remains for comparison.
+
+For local integration tests:
+```
+/root/404-dev-venv/bin/python -m pytest tests/test_dual_lineage.py
+```
+
+For live registration after a future round opens, use that round's actual seed,
+inputs, released SDK requirements and confirmed schedule. Do not reuse Round 3
+context for an improved source revision.
+
+## Previous registered version documentation
+
 # 404 Round 3 procedural miner
 
 라운드 공개 전 고정할 Python 생성기입니다. 입력 PNG 한 장을 받아, 검증·렌더를 거친 자급식 Three.js 모듈을 반환합니다. **우승이 입증된 제출물이라는 의미는 아닙니다.** 실제 라운드 3 이미지와 시드는 조사 시점에 공개되지 않았습니다.
