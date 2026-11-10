@@ -72,14 +72,11 @@ FINAL_SELECT_ID = 9800
 POSE_ID = 9900
 CHECK_ID = 9950  # the inspector; +10 its rewrite; +20 and +21 the selector's choice
 REVIEW_ID = 9600  # the reviewer before a round that feeds fixes: + 10 * (round index + 1) + lineage
-VIEW_ID = 9985  # the viewpoint estimate before the drafts
 CRITIQUE_ID = 9400  # the critique of the drafts; + 10 the module merged from them
 CALL_RESERVE = 3  # calls the round planner leaves for the pose choice and one repair
 JUDGE_MAX_OUTPUT = 4096
 JUDGE_DRAW = 0.7  # the judge's own first-stage draw threshold, in mean penalty points
 TILT_SELECT_ID = 9960  # the judged final tilt; the mirrored call takes the next id
-STUDY_ID = 9986  # the second-form photo study before the drafts
-STUDY_MAX_OUTPUT = 12000
 TILT_CHOICES = (0, 20, 40)  # degrees toward the cameras, offered for the finished module
 TILT_MARGIN = 0.25  # mean penalty points a new tilt must gain over the module as finished
 _TILT_LINES = re.compile(r"if \(flat\.y < 0\.5 \* Math\.max\(flat\.x, flat\.z\)\) root\.rotation\.x = 15 \* Math\.PI / 180;"
@@ -501,7 +498,6 @@ class Candidate:
     fixes: list[str] = field(default_factory=list)  # the selector's fixes from the last selection that scored it
     notes: str = ""  # the model's list of differences, written before its code
     visible_tokens: int = 0  # output tokens of the reply that wrote it, reasoning excluded
-    photo_view: bytes = b""  # its render from the photo's own estimated viewpoint, made when a rewrite asks for it
     shots: list[bytes] = field(default_factory=list)  # the two level side views as the judge sees them, uncropped (kept for judge_pick)
 
 
@@ -566,9 +562,6 @@ class StagePlan:
     outline_fit: bool = False
     # The same fit, applied only to the finished module: the chain runs without it.
     check: bool = False  # an inspector lists serious faults of the finished module; a severe list gets one gated rewrite
-    viewpoint: bool = False  # estimate the photo's viewpoint and true proportions first, and give them to every module request
-    context: bool = False  # in that call (or alone), everyday knowledge of the object: regular features, assembly, materials
-    photo_view: bool = False  # with the viewpoint: rewrites also see the module rendered from the photo's own viewpoint
     budget_plan: bool = False  # after round 1, cheaper models for later rounds when the forecast cost would not fit
     plan_rounds: int = 0  # the planner makes only the first N rounds fit; later rounds run when the guard admits them (0 = all)
     astra_last: bool = False  # the planner lowers Sol xhigh rounds to Sol high first and touches Astra rounds only after them
@@ -578,8 +571,6 @@ class StagePlan:
     tone: bool = False  # the finished module gets slightly more contrast and colour
     forward: bool = False  # the finished object is moved to the front face of the unit cube
     judged_tilt: bool = False  # the finished module is offered at other tilts toward the cameras; the pose selector's clear favourite is kept
-    study: bool = False  # before the drafts: the form read from light, whether the object is an ordinary one, what is light and not colour, how parts are turned
-    study_drafts: int = 0  # how many of the first drafts get the study's text (0 = all); rewrites get it only when such a draft leads the chain
     outline_fit_last: bool = False
     post_pick_effort: str = "xhigh"  # effort of the rewrites of the final pick
     post_pick_steps: int = POST_PICK_STEPS  # rewrites of the final pick; 0 ends the chain at the pick
@@ -646,15 +637,10 @@ class Pipeline:
         self.photo: match.Appearance | None = None
         self.brief = ""
         self.patch_log: list[dict[str, Any]] = []  # one entry per patch-edit reply
-        self.view_text = ""  # the photo's estimated viewpoint, added to every module request when the plan asks for it
-        self.view: dict[str, Any] = {}  # that estimate as parsed
-        self.photo_view = False  # rewrites also see the module from the photo's own viewpoint
         self.patch_ratios: list[float] = []  # per patch-edit reply: its visible tokens over the module's (1 for a whole module)
         self.level_tilt = False
         self.keep_shots = False  # candidates keep their uncropped side views for judge_pick
         self.end_reserve = 0.0  # credits the round planner leaves for the selection after the last round
-        self.study_block = ""  # the photo study as text
-        self.study_drafts = 0
         self.merge_base = ""  # the draft the merged draft was built on
 
     # ----- model calls -----
@@ -668,62 +654,6 @@ class Pipeline:
             {"type": "input_text", "text": "NEW version (its latest rewrite): the same views:"},
             *[image(v) for v in child.views], image(child.sides),
             {"type": "input_text", "text": prompts.MERGE_ROUND.format(current=parent.raw, new=child.raw)}])
-
-    def viewpoint(self, pool: ThreadPoolExecutor, viewpoint: bool = True, context: bool = False) -> str:
-        """One call before the drafts: how the photo was taken and the object's true proportions, and with `context` what the
-        object is in everyday life (its regular features, how it is put together, its materials), as text for every request."""
-        asked = "\n\n".join(text for text, on in ((prompts.VIEW_USER, viewpoint), (prompts.CONTEXT_USER, context)) if on)
-        content = [{"type": "input_text", "text": "TARGET:"}, self.target, *self.closeup, {"type": "input_text", "text": asked}]
-        reply = self.run_stage(pool, [Call(VIEW_ID, SOL, prompts.VIEW_SYSTEM, content, "high", SELECT_MAX_OUTPUT,
-                                           text=prompts.view_schema(context, viewpoint))])[0]
-        try:
-            if reply is None:
-                return ""
-            self.view = json.loads(reply.output_text)
-            return prompts.view_block(self.view)
-        except (ValueError, TypeError, KeyError, AttributeError):
-            return ""
-
-    def photo_study(self, pool: ThreadPoolExecutor) -> str:
-        """One call before the drafts: this object's form as light and shadow show it, whether it is an ordinary object
-        (only then is everyday knowledge passed on), what in the photo is light and not colour, and how parts are turned."""
-        content = [{"type": "input_text", "text": "TARGET:"}, self.target, *self.closeup, {"type": "input_text", "text": prompts.STUDY_USER}]
-        reply = self.run_stage(pool, [Call(STUDY_ID, SOL, prompts.STUDY_SYSTEM, content, "high", STUDY_MAX_OUTPUT, text=prompts.study_schema())])[0]
-        try:
-            if reply is None:
-                return ""
-            study = json.loads(reply.output_text)
-            block = prompts.study_block(study)
-            self.view = {"camera_elevation_deg": float(study["camera_elevation_deg"])}
-            return block
-        except (ValueError, TypeError, KeyError, AttributeError):
-            return ""
-
-    def informed(self, name: str) -> bool:
-        """Whether the draft of this name was written with the study's text."""
-        if not self.study_block:
-            return False
-        if not self.study_drafts:
-            return True
-        return name[:1] == "d" and name[1:].isdigit() and int(name[1:]) < self.study_drafts
-
-    def photo_height(self) -> str:
-        elevation = float(self.view["camera_elevation_deg"])
-        return f"{abs(elevation):.0f} degrees {'above' if elevation >= 0 else 'below'}"
-
-    def photo_shot(self, module: Candidate) -> bytes:
-        """The module from the photo's own estimated viewpoint (straight on, at the photo's camera height), or nothing."""
-        if not module.photo_view:
-            try:
-                elevation = max(-20.0, min(75.0, float(self.view["camera_elevation_deg"])))
-                options = RenderOptions(thetas=(0,), phis=(-round(elevation),), img_size=1024, gap=0, bg_color="ffffff",
-                                        lighting="neutral")
-                # without the automatic tilt for flat objects, so the camera height means the same as in the photo;
-                # cropped close to the object, like the judge-view close-ups
-                module.photo_view = zoomed_views(self.renderer.render(tilt.tilted(module.source, 0), options), 1, 1)[0]
-            except (RenderRejected, KeyError, TypeError, ValueError):
-                return b""
-        return module.photo_view
 
     def reviewed(self, pool: ThreadPoolExecutor, module: Candidate, request_id: int) -> list[str]:
         """A reviewer's concrete fixes for one module against the target (the round selector does not write any)."""
@@ -812,10 +742,6 @@ class Pipeline:
 
         text = prompts.MERGE_PICK + "\n\n" + block(base, "BASE") + "".join("\n\n" + block(label, "OTHER") for label in others)
         self.merge_base = by[base].name
-        if self.view_text:
-            text += "\n\n" + self.view_text
-        elif self.informed(self.merge_base):
-            text += "\n\n" + self.study_block
         call = Call(CRITIQUE_ID + 10, SOL, self.instructions, [{"type": "input_text", "text": text}, self.target, *self.closeup],
                     "high", GENERATE_MAX_OUTPUT)
         merged = self.modules(pool, [call], ["dm"])[0]
@@ -840,7 +766,7 @@ class Pipeline:
         size = chars / MODULE_CHARS_PER_TOKEN
         ratio = min(1.0, max(PATCH_FLOOR, sum(self.patch_ratios) / len(self.patch_ratios))) if self.patch_ratios else PATCH_PRIOR
         usable = CREDIT_LIMIT * (1 - SAFETY) - self.end_reserve
-        text = int(len(self.instructions) + chars + len(prompts.REWRITE_PATCH) + len(self.view_text) + 400)
+        text = int(len(self.instructions) + chars + len(prompts.REWRITE_PATCH) + 400)
         judge = worst_case(SOL, 4000, 9, SELECT_MAX_OUTPUT)
 
         def rewrite_cost(step: Step) -> float:
@@ -1003,8 +929,6 @@ class Pipeline:
         target = prompts.TARGET_INVENTORY if start == "inventory" else prompts.TARGET_PROPORTIONS if start == "proportions" else prompts.TARGET
         if self.brief and not extra:
             target = f"{target}\n\n{self.brief}"
-        if self.view_text:
-            target = f"{target}\n\n{self.view_text}"
         content = [{"type": "input_text", "text": target}, self.target, *self.closeup, *extra]
         cap = self.astra_cap if model == ASTRA else EFFORT_MAX_OUTPUT.get(effort, GENERATE_MAX_OUTPUT)
         return Call(request_id, model, self.instructions, content, effort, cap)
@@ -1019,16 +943,12 @@ class Pipeline:
             return self.module_call(request_id, model, effort, [
                 *views, {"type": "input_image", "image_url": data_url(parent.sides), "detail": "high"}, *overlay,
                 {"type": "input_text", "text": text}])
-        shot = self.photo_shot(parent) if self.photo_view and self.view else b""
-        if shot:
-            extra += prompts.PHOTO_VIEW_NOTE.format(elevation=self.photo_height())
         call = self.module_call(request_id, model, effort, [
             {"type": "input_text", "text": "Current module, in order: 30 degrees left, 30 degrees right, from slightly below, from above; then the second-stage grid."},
             *views,
             {"type": "input_image", "image_url": data_url(parent.sides), "detail": "high"},
             {"type": "input_text", "text": (prompts.REWRITE_PATCH if patch_edit else prompts.REWRITE).format(
                 source=parent.raw, focus=prompts.REWRITE_FOCUS[focus] + extra)},
-            *([{"type": "input_image", "image_url": data_url(shot), "detail": "high"}] if shot else []),
         ])
         if patch_edit and self.instructions == prompts.GENERATE_CHAIN:
             call.instructions = prompts.GENERATE_CHAIN_PATCH
@@ -1336,18 +1256,8 @@ class Pipeline:
                 self.astra_cap = MEASURED_ASTRA_MAX_OUTPUT
                 self.photo = match.photo_appearance(self.image)
                 self.brief = self.photo_brief(pool)
-            if plan.viewpoint or plan.context:
-                self.view_text = self.viewpoint(pool, plan.viewpoint, plan.context)
-                if plan.photo_view and self.view_text and "camera_elevation_deg" in self.view:
-                    self.photo_view = True
-                    self.view_text += prompts.PHOTO_GOAL.format(elevation=self.photo_height())
-            if plan.study:
-                self.study_block, self.study_drafts = self.photo_study(pool), plan.study_drafts
             calls = [self.module_call(DRAFT_ID + i, draft.model, draft.effort, [], draft.start)
                      for i, draft in enumerate(plan.drafts)]
-            for i, call in enumerate(calls):
-                if self.informed(f"d{i}"):
-                    call.content[0] = {"type": "input_text", "text": call.content[0]["text"] + "\n\n" + self.study_block}
             survivors = [c for c in self.modules(pool, calls, [f"d{i}" for i in range(len(calls))]) if c is not None]
             if not survivors:  # one more attempt on the cheaper model before giving up on the prompt
                 calls = [self.module_call(REDRAFT_ID + i, SOL, "high", [], draft.start)
@@ -1359,15 +1269,9 @@ class Pipeline:
             if plan.draft_keep:
                 drafts = survivors
                 survivors = self.drafts_kept(pool, survivors, plan)
-                picked = survivors[0].name
                 if plan.merge_pick:
                     survivors = [self.merged_pick(pool, drafts, survivors[0]), *survivors[1:]]
                 self.best_so_far = survivors[0].source
-                if self.informed(self.merge_base if survivors[0].name == "dm" else picked):  # the chain grows from a draft that had the study
-                    self.view_text = self.study_block
-                    if plan.photo_view and "camera_elevation_deg" in self.view:
-                        self.photo_view = True
-                        self.view_text += prompts.PHOTO_GOAL.format(elevation=self.photo_height())
             searched = False
             steps = list(plan.steps)
             for index in range(len(steps)):
