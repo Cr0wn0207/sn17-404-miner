@@ -4,13 +4,13 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "404-round3-miner"
-version = "0.30.0"
+version = "0.31.0"
 description = "Procedural image-to-Three.js competition generator with witnessed replay"
 requires-python = ">=3.13,<3.14"
 dependencies = [
-  "404-witness-client @ https://github.com/404-Repo/404-gen-subnet/releases/download/miner-runtime-v0.1.5/404_witness_client-0.2.17-py3-none-manylinux_2_34_x86_64.whl#sha256=70a7fda820edaa90d109817ac671487a3ac6a053ae0bb9b17991fe858671adfd",
-  "404-renderer-client @ https://github.com/404-Repo/404-gen-subnet/releases/download/miner-runtime-v0.1.5/404_renderer_client-0.1.4-py3-none-any.whl#sha256=35b1b77efe479a18713a0d817bd60749089cc7d0725c1738edbbcd8caccaa4fa",
-  "404-miner-runtime @ https://github.com/404-Repo/404-gen-subnet/releases/download/miner-runtime-v0.1.5/404_miner_runtime-0.1.5-py3-none-any.whl#sha256=db3f70f71b25f57bd06030bb637ee2e643b3a60849d541074d9da7e15ddc6f0c",
+  "404-witness-client @ https://github.com/404-Repo/404-gen-subnet/releases/download/miner-runtime-v0.1.6/404_witness_client-0.2.18-py3-none-manylinux_2_34_x86_64.whl#sha256=d2117b9fc3b478b35aee9552b22d8b1505656b6f4eb623bd61dbf72f9dd3bd86",
+  "404-renderer-client @ https://github.com/404-Repo/404-gen-subnet/releases/download/miner-runtime-v0.1.6/404_renderer_client-0.1.5-py3-none-any.whl#sha256=a891cfeeeb480ca38ec521fb95907be72cb068639faf956bec61c7c5b2b405eb",
+  "404-miner-runtime @ https://github.com/404-Repo/404-gen-subnet/releases/download/miner-runtime-v0.1.6/404_miner_runtime-0.1.6-py3-none-any.whl#sha256=0ed6afac5e49c324ca878db092164b59f13d75e5d80c77f2ce79c52555d09d17",
   "numpy==2.5.4", "pillow==13.0.0", "openai==3.29.0", "pydantic==2.14.1", "httpx==0.28.1",
   "bittensor-wallet==4.1.0", "websockets==17.2", "cryptography==50.0.2", "tlslite-ng==0.8.2",
 ]

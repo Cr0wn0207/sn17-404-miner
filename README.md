@@ -1,7 +1,8 @@
-# V30: deeper candidate refinement
+# Round 4 candidate: deep candidate refinement
 
 `main.generate(image, seed, witness)` creates a procedural Three.js module from one image.
-This is an experimental generator for a future competition registration; its quality is not yet measured.
+This source is prepared for the Round 4 competition. Local proxy judging is
+diagnostic and does not establish an official competition score.
 
 The generator makes six Sol drafts, selects one lineage using mirrored render comparisons,
 and applies up to ten gated Sol/Astra refinement steps. Budget admission can skip steps.
@@ -33,6 +34,7 @@ and blinded two-order Sol/Astra S1/S4 proxy comparisons. It preserves renderer e
 ordered observations so transient service failures do not disappear during replay.
 Those records are development diagnostics, not formal Witness proofs or official GLM scores.
 
-Round 3's original registration and generated outputs remain frozen. A later registration
-requires the operator's confirmed schedule, current round inputs/seed and supported SDK.
-No chain registration or publication is performed by the generator or local benchmark.
+The CLI uses miner-runtime 0.1.6, witness-client 0.2.18 and the Round 4 concurrency
+settings (`--workers 24 --parallel-calls 32 --parallel-preparations 4`) by default.
+Round 3's original registration and generated outputs remain frozen. The registered
+Round 4 commit must be fixed before its prompts and seed are published.

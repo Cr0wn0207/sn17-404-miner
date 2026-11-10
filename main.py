@@ -38,8 +38,9 @@ async def main():
     parser.add_argument("--wallet-name", default="miner")
     parser.add_argument("--wallet-hotkey", default="default")
     parser.add_argument("--wallet-path", default="~/.bittensor/wallets")
-    parser.add_argument("--parallel-prompts", type=int, default=8)
-    parser.add_argument("--parallel-calls", type=int, default=8)
+    parser.add_argument("--workers", "--parallel-prompts", dest="workers", type=int, default=24)
+    parser.add_argument("--parallel-calls", type=int, default=32)
+    parser.add_argument("--parallel-preparations", type=int, default=4)
     parser.add_argument("--attempts", type=int, default=3)
     parser.add_argument("--api", action="store_true")
     args = parser.parse_args()
@@ -52,8 +53,9 @@ async def main():
         mapped,
         args.seed,
         witness_config=Path(__file__).with_name("witness.json"),
-        workers=args.parallel_prompts,
+        workers=args.workers,
         parallel_calls=args.parallel_calls,
+        parallel_preparations=args.parallel_preparations,
         attempts=args.attempts,
         wallet_name=args.wallet_name,
         wallet_hotkey=args.wallet_hotkey,
