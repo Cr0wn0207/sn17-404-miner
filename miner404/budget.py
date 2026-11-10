@@ -16,7 +16,7 @@ PRICING = json.loads(Path(__file__).with_name("pricing.json").read_text())
 CREDIT_LIMIT = PRICING["credits_per_prompt"]
 CALL_LIMIT = PRICING["calls_per_prompt"]
 LONG_CONTEXT = PRICING["long_context_above_input_tokens"]
-SAFETY = 0.04  # keep 4% of the credit limit unspent
+SAFETY = 0.06  # keep 6% of the credit limit unspent
 TOKENS_PER_IMAGE = 3000  # conservative per-image input estimate
 CHARS_PER_TOKEN = 3.0  # conservative (code and JSON tokenize densely)
 

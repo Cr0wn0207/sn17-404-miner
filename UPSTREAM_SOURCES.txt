@@ -15,3 +15,11 @@ Our integration consists of the async runtime bridge, packaging, selected-wallet
 Codex witness configuration, tests and separate development evaluation driver.
 The old miner package is retained for baseline comparisons; main.generate uses miner404.
 Do not import experiments or read saved generated outputs from main.generate.
+
+V30 additions
+The single-lineage ten-step StagePlan is adopted from the public registered code
+  taohunter251/lark-ridge @ 20a6f55765f06137c3c589b3c28f77b152da11e1
+  https://github.com/taohunter251/lark-ridge/tree/20a6f55765f06137c3c589b3c28f77b152da11e1
+Our changes reduce actual output token caps (rather than under-reserving larger caps),
+keep 6% budget headroom and validate the final transformed module through the supplied renderer.
+Development harness improvements preserve every renderer outcome, including HTTP service errors.

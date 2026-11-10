@@ -74,7 +74,8 @@ def test_entry_point_replays_same_requests_renders_and_output(monkeypatch):
     ids = [call['request_id'] for call in first.calls]
     assert len(ids) == len(set(ids)) <= 60
     authored = [i for i in ids if 1 <= i <= 6 or 100 <= i < 700]
-    assert len(authored) == 18, 'Six drafts and twelve lineage rewrites must actually execute'
+    assert len(authored) == 12, 'Six drafts and six early deep-lineage rewrites execute below request id 700'
+    assert len([i for i in ids if 100 <= i <= 1000 and i % 100 == 0]) == 10, 'All ten deep-lineage steps execute'
     assert all(call['service_tier'] == 'default' for call in first.calls)
     assert all(options['lighting'] == 'neutral' for _, options in first.renders)
 

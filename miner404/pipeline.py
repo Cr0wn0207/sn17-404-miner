@@ -49,11 +49,11 @@ SOL = "gpt-6.1-sol"
 ASTRA = "gpt-6-astra"
 GENERATE_EFFORT = "high"
 SELECT_EFFORT = "medium"
-GENERATE_MAX_OUTPUT = 32768
-SELECT_MAX_OUTPUT = 8192
+GENERATE_MAX_OUTPUT = 24000
+SELECT_MAX_OUTPUT = 2048
 GARBAGE_PENALTY = 2.0  # added when at least three side views look like garbage (the judge's side guard)
-ASTRA_MAX_OUTPUT = 22000  # five times Sol per token, and the budget guard reserves the whole cap before each call
-EFFORT_MAX_OUTPUT = {"xhigh": 44000, "max": 64000}  # reasoning counts against the cap
+ASTRA_MAX_OUTPUT = 18500  # five times Sol per token, and the budget guard reserves the whole cap before each call
+EFFORT_MAX_OUTPUT = {"xhigh": 36000, "max": 64000}  # reasoning counts against the cap
 GRID_WEIGHT = 0.25  # the grid only decides duels the front views leave close
 PARENT_MARGIN = 0.25  # mean penalty points a parent must lead by
 POSE_PITCHES = (45, 90)  # for a photo from above, and for a face shown head-on
@@ -986,7 +986,21 @@ class Pipeline:
             winner = self.select(pool, survivors, set(), 1, FINAL_SELECT_ID)[0]
             self.best_so_far = winner.source
             final = self.posed(pool, winner) if plan.pose and not plan.measured else winner
-            return self.stronger_metal(self.photo_tilted(self.fitted_last(winner, plan)) if plan.outline_fit_last and final is winner else final.source)
+            source = self.stronger_metal(self.photo_tilted(self.fitted_last(winner, plan)) if plan.outline_fit_last and final is winner else final.source)
+            return self.validated_final(source, final.source, winner.source)
+
+    def validated_final(self, source: str, *alternatives: str) -> str:
+        """Validate post-processing too; preserve the last renderable parent."""
+        for candidate in dict.fromkeys((source, *alternatives)):
+            try:
+                self.renderer.render(candidate, FRONT_JUDGE)
+                self.renderer.render(candidate, GRID_VIEW)
+            except RenderRejected:
+                continue
+            return candidate
+        # Rendering an unaccepted module as a successful fallback would hide a
+        # resource violation. Infrastructure errors propagate separately.
+        raise CallFailed('No final candidate passed the renderer contract')
 
     def photo_tilted(self, source: str) -> str:
         """The module at the tilt that matches the photo best, as it is when the photo does not settle it or the renderer refuses."""
