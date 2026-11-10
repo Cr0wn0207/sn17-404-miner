@@ -77,6 +77,13 @@ CRITIQUE_ID = 9400  # the critique of the drafts; + 10 the module merged from th
 CALL_RESERVE = 3  # calls the round planner leaves for the pose choice and one repair
 JUDGE_MAX_OUTPUT = 4096
 JUDGE_DRAW = 0.7  # the judge's own first-stage draw threshold, in mean penalty points
+TILT_SELECT_ID = 9960  # the judged final tilt; the mirrored call takes the next id
+STUDY_ID = 9986  # the second-form photo study before the drafts
+STUDY_MAX_OUTPUT = 12000
+TILT_CHOICES = (0, 20, 40)  # degrees toward the cameras, offered for the finished module
+TILT_MARGIN = 0.25  # mean penalty points a new tilt must gain over the module as finished
+_TILT_LINES = re.compile(r"if \(flat\.y < 0\.5 \* Math\.max\(flat\.x, flat\.z\)\) root\.rotation\.x = 15 \* Math\.PI / 180;"
+                         r"|root\.rotation\.x = \d+ \* Math\.PI / 180;")
 CHECK_SEVERITY = 5  # what the inspector must report before the finished module is rewritten
 POST_PICK_STEPS = 3  # rewrites of the final pick (steps 7-9: rewrite 700/800/900, selection 9070/9080/9090)
 POST_PICK_REWRITE = (SOL, "xhigh")  # the rewrite of the plan's last step
@@ -570,6 +577,9 @@ class StagePlan:
     level_tilt: bool = False  # where the photo's outline calls for the 22-degree tilt, only flat objects get it; taller ones stay level
     tone: bool = False  # the finished module gets slightly more contrast and colour
     forward: bool = False  # the finished object is moved to the front face of the unit cube
+    judged_tilt: bool = False  # the finished module is offered at other tilts toward the cameras; the pose selector's clear favourite is kept
+    study: bool = False  # before the drafts: the form read from light, whether the object is an ordinary one, what is light and not colour, how parts are turned
+    study_drafts: int = 0  # how many of the first drafts get the study's text (0 = all); rewrites get it only when such a draft leads the chain
     outline_fit_last: bool = False
     post_pick_effort: str = "xhigh"  # effort of the rewrites of the final pick
     post_pick_steps: int = POST_PICK_STEPS  # rewrites of the final pick; 0 ends the chain at the pick
@@ -642,6 +652,10 @@ class Pipeline:
         self.patch_ratios: list[float] = []  # per patch-edit reply: its visible tokens over the module's (1 for a whole module)
         self.level_tilt = False
         self.keep_shots = False  # candidates keep their uncropped side views for judge_pick
+        self.end_reserve = 0.0  # credits the round planner leaves for the selection after the last round
+        self.study_block = ""  # the photo study as text
+        self.study_drafts = 0
+        self.merge_base = ""  # the draft the merged draft was built on
 
     # ----- model calls -----
 
@@ -669,6 +683,29 @@ class Pipeline:
             return prompts.view_block(self.view)
         except (ValueError, TypeError, KeyError, AttributeError):
             return ""
+
+    def photo_study(self, pool: ThreadPoolExecutor) -> str:
+        """One call before the drafts: this object's form as light and shadow show it, whether it is an ordinary object
+        (only then is everyday knowledge passed on), what in the photo is light and not colour, and how parts are turned."""
+        content = [{"type": "input_text", "text": "TARGET:"}, self.target, *self.closeup, {"type": "input_text", "text": prompts.STUDY_USER}]
+        reply = self.run_stage(pool, [Call(STUDY_ID, SOL, prompts.STUDY_SYSTEM, content, "high", STUDY_MAX_OUTPUT, text=prompts.study_schema())])[0]
+        try:
+            if reply is None:
+                return ""
+            study = json.loads(reply.output_text)
+            block = prompts.study_block(study)
+            self.view = {"camera_elevation_deg": float(study["camera_elevation_deg"])}
+            return block
+        except (ValueError, TypeError, KeyError, AttributeError):
+            return ""
+
+    def informed(self, name: str) -> bool:
+        """Whether the draft of this name was written with the study's text."""
+        if not self.study_block:
+            return False
+        if not self.study_drafts:
+            return True
+        return name[:1] == "d" and name[1:].isdigit() and int(name[1:]) < self.study_drafts
 
     def photo_height(self) -> str:
         elevation = float(self.view["camera_elevation_deg"])
@@ -774,8 +811,11 @@ class Pipeline:
                     + "; ".join(note.get("weaknesses", [])) + f"\n```javascript\n{by[label].raw}\n```")
 
         text = prompts.MERGE_PICK + "\n\n" + block(base, "BASE") + "".join("\n\n" + block(label, "OTHER") for label in others)
+        self.merge_base = by[base].name
         if self.view_text:
             text += "\n\n" + self.view_text
+        elif self.informed(self.merge_base):
+            text += "\n\n" + self.study_block
         call = Call(CRITIQUE_ID + 10, SOL, self.instructions, [{"type": "input_text", "text": text}, self.target, *self.closeup],
                     "high", GENERATE_MAX_OUTPUT)
         merged = self.modules(pool, [call], ["dm"])[0]
@@ -798,8 +838,8 @@ class Pipeline:
                     rest[i] = replace(step, merge=False)
         chars = len(module.raw) * (1 + (MODULE_GROWTH - 1) * len(rest) / 9)
         size = chars / MODULE_CHARS_PER_TOKEN
-        ratio = min(1.0, max(PATCH_FLOOR, sum(self.patch_ratios) / len(self.patch_ratios))) if self.patch_ratios else 1.0
-        usable = CREDIT_LIMIT * (1 - SAFETY)
+        ratio = min(1.0, max(PATCH_FLOOR, sum(self.patch_ratios) / len(self.patch_ratios))) if self.patch_ratios else PATCH_PRIOR
+        usable = CREDIT_LIMIT * (1 - SAFETY) - self.end_reserve
         text = int(len(self.instructions) + chars + len(prompts.REWRITE_PATCH) + len(self.view_text) + 400)
         judge = worst_case(SOL, 4000, 9, SELECT_MAX_OUTPUT)
 
@@ -1286,6 +1326,7 @@ class Pipeline:
         self.wrapper = chain_wrapper(plan.fill, plan.glow, plan.outline_fit or plan.measured)
         self.level_tilt = plan.level_tilt
         self.keep_shots = any(step.judge_pick for step in plan.steps)
+        self.end_reserve = 2 * worst_case(SOL, 4000, 11, SELECT_MAX_OUTPUT) if plan.judged_tilt else 0.0
         closeup = object_closeup(self.image)
         if closeup is not None:
             self.closeup = [{"type": "input_image", "image_url": data_url(closeup), "detail": "high"}]
@@ -1300,8 +1341,13 @@ class Pipeline:
                 if plan.photo_view and self.view_text and "camera_elevation_deg" in self.view:
                     self.photo_view = True
                     self.view_text += prompts.PHOTO_GOAL.format(elevation=self.photo_height())
+            if plan.study:
+                self.study_block, self.study_drafts = self.photo_study(pool), plan.study_drafts
             calls = [self.module_call(DRAFT_ID + i, draft.model, draft.effort, [], draft.start)
                      for i, draft in enumerate(plan.drafts)]
+            for i, call in enumerate(calls):
+                if self.informed(f"d{i}"):
+                    call.content[0] = {"type": "input_text", "text": call.content[0]["text"] + "\n\n" + self.study_block}
             survivors = [c for c in self.modules(pool, calls, [f"d{i}" for i in range(len(calls))]) if c is not None]
             if not survivors:  # one more attempt on the cheaper model before giving up on the prompt
                 calls = [self.module_call(REDRAFT_ID + i, SOL, "high", [], draft.start)
@@ -1313,9 +1359,15 @@ class Pipeline:
             if plan.draft_keep:
                 drafts = survivors
                 survivors = self.drafts_kept(pool, survivors, plan)
+                picked = survivors[0].name
                 if plan.merge_pick:
                     survivors = [self.merged_pick(pool, drafts, survivors[0]), *survivors[1:]]
                 self.best_so_far = survivors[0].source
+                if self.informed(self.merge_base if survivors[0].name == "dm" else picked):  # the chain grows from a draft that had the study
+                    self.view_text = self.study_block
+                    if plan.photo_view and "camera_elevation_deg" in self.view:
+                        self.photo_view = True
+                        self.view_text += prompts.PHOTO_GOAL.format(elevation=self.photo_height())
             searched = False
             steps = list(plan.steps)
             for index in range(len(steps)):
@@ -1343,6 +1395,9 @@ class Pipeline:
                 self.best_so_far = winner.source
             final = self.posed(pool, winner) if plan.pose and not plan.measured else winner
             source = self.stronger_metal(self.photo_tilted(self.fitted_last(winner, plan)) if plan.outline_fit_last and final is winner else final.source)
+            if plan.judged_tilt:
+                self.best_so_far = source
+                source = self.judged_tilt(pool, source)
             if plan.tone:
                 source = self.toned(source)
             if plan.forward:
@@ -1360,6 +1415,37 @@ class Pipeline:
         except RenderRejected:
             return source
         return turned
+
+    def judged_tilt(self, pool: ThreadPoolExecutor, source: str) -> str:
+        """The finished module at the tilt the pose selector prefers: the module as finished, and turned 0, 20 and 40
+        degrees toward the cameras, scored together in both orders. A new tilt must lead by TILT_MARGIN."""
+        lines = _TILT_LINES.findall(source)
+        if len(lines) != 1:
+            return source
+        variants = {"finished": source}
+        for angle in TILT_CHOICES:
+            variants[f"tilt{angle}"] = source.replace(lines[0], f"root.rotation.x = {angle} * Math.PI / 180;", 1)
+        candidates: list[Candidate] = []
+        seen: set[str] = set()
+        for name, text in variants.items():
+            outcome = self.render_module(name, text)
+            if not isinstance(outcome, Candidate):
+                continue
+            key = hashlib.sha256(outcome.front + outcome.sides).hexdigest()
+            if key in seen:
+                continue
+            seen.add(key)
+            candidates.append(outcome)
+        if len(candidates) < 2 or candidates[0].name != "finished":
+            return source
+        judgements = self.scores(pool, candidates, TILT_SELECT_ID, prompts.SELECT_POSE)
+        current = judgements.get("finished")
+        if current is None:
+            return source
+        best = min((c for c in candidates if c.name in judgements), key=lambda c: (judgements[c.name].score, c.name != "finished"))
+        if best.name != "finished" and judgements[best.name].score + TILT_MARGIN <= current.score:
+            return best.source
+        return source
 
     def toned(self, source: str) -> str:
         """Slightly more contrast and colour on the finished module; as it is when the renderer refuses."""
@@ -1626,6 +1712,7 @@ def round_cost(rewrite: tuple[str, str], tokens: float) -> float:
 
 MODULE_CHARS_PER_TOKEN = 2.85  # module code, measured on rewrite replies
 PATCH_FLOOR = 0.4  # the least a patch-edit reply is taken to cost, as a share of the whole module
+PATCH_PRIOR = 0.6  # that share before any patch-edit reply of this prompt has been seen
 MERGE_COST = (748, 11000)  # a round's merge call: reasoning tokens, and input tokens besides the two modules
 SELECT_EXTRA_CREDITS = 12000  # a third candidate in the round's two selection calls
 _CENTERED = "    root.position.set(-center.x * scale, -center.y * scale, -center.z * scale);\n"
