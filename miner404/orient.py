@@ -166,3 +166,23 @@ export default function generate(THREE) {{
   return pose;
 }}
 """
+
+
+_ADD_CALLS = ("root.add(__asset404(THREE));", "root.add(__yaw404);", "root.add(__pose404);")
+
+
+def reposed(source: str, yaw: int, pitch: int, roll: int) -> str:
+    """The module with one more turn (Y, then X, then Z) around whatever it already adds to the root, before the fit.
+
+    Unlike `turned`, this also works on a module the pose stage has already turned. Unchanged when the wrapper call is
+    not found exactly once."""
+    if not (yaw or pitch or roll):
+        return source
+    calls = [call for call in _ADD_CALLS if source.count(call) == 1]
+    if len(calls) != 1:
+        return source
+    inner = calls[0][len("root.add("):-2]
+    replacement = ("const __fit404 = new THREE.Group(); __fit404.rotation.order = 'YXZ'; "
+                   f"__fit404.rotation.set({pitch} * Math.PI / 180, {yaw} * Math.PI / 180, {roll} * Math.PI / 180); "
+                   f"__fit404.add({inner}); root.add(__fit404);")
+    return source.replace(calls[0], replacement, 1)

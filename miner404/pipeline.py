@@ -40,7 +40,7 @@ from openai.types.responses import Response, ResponseInputParam
 from openai.types.responses.response_create_params import ResponseCreateParamsBase
 from witness_client import ExchangePending, RenderOptions, RenderRejected, RenderUnavailable, WitnessError
 
-from . import match, orient, patch, prompts, tilt
+from . import dino, match, orient, patch, prompts, tilt
 from .budget import CALL_LIMIT, CREDIT_LIMIT, PRICING, SAFETY, Budget, worst_case
 from .fallback import fallback_module
 from .images import data_url, object_closeup, png_data_url, to_jpeg, view_sheet, zoomed_views
@@ -93,6 +93,20 @@ FIT_VIEW_LIMIT = 12.0  # the fit also corrects a wrong plain size, which changes
 POSE_SEARCH_GAIN = 0.5  # match score a turn must gain to be offered to the selector at all
 
 # The judge's Stage 1 front views and Stage 4 side views (shared/subnet_common/render.py), white, neutral light.
+# Similarity is dino.grid_similarity of the judge's four front views to the photo, in millionths.
+VIEW_PICK_GAIN = 10000  # lead another module of the lineage needs over the selector's last pick to replace it
+VIEW_FIT_GAIN = 3000  # gain a turn or tone needs to be kept
+# (setting, trial values given its current value). Settings: 0 yaw, 1 pitch, 2 roll, 3 gamma, 4 saturation.
+# Yaw goes coarse, wider only from the edge of the coarse range, then fine.
+VIEW_FIT_STEPS: tuple[tuple[int, Any], ...] = (
+    (0, lambda yaw: (-30, -15, 15, 30)),
+    (0, lambda yaw: (yaw * 3 // 2, yaw * 2) if abs(yaw) == 30 else ()),
+    (0, lambda yaw: (yaw - 7, yaw + 7)),
+    (1, lambda pitch: (-20, -10, 10, 20)),
+    (2, lambda roll: (-10, 10)),
+    (3, lambda gamma: (0.85, 1.15, 1.3)),
+    (4, lambda saturation: (1.15, 1.3)),
+)
 FRONT = RenderOptions(thetas=(30, 330, 0, 0), phis=(0, 0, 15, -30), img_size=384, bg_color="ffffff",
                       lighting="neutral")
 SIDES = RenderOptions(thetas=(90, 180, 270, 0), phis=(0, 0, 0, -90), img_size=256, bg_color="ffffff",
@@ -493,6 +507,7 @@ class Candidate:
     views: list[bytes] = field(default_factory=list)  # close-ups of the four front views
     parent: Candidate | None = None
     match: float = 0.0  # how closely the views match the photo, in measured plans
+    similarity: int = -1  # dino.grid_similarity of the four judge views, in plans that finish by it
     measurements: str = ""
     overlay: bytes = b""
     fixes: list[str] = field(default_factory=list)  # the selector's fixes from the last selection that scored it
@@ -572,6 +587,12 @@ class StagePlan:
     forward: bool = False  # the finished object is moved to the front face of the unit cube
     judged_tilt: bool = False  # the finished module is offered at other tilts toward the cameras; the pose selector's clear favourite is kept
     outline_fit_last: bool = False
+    # Finish from the module of the winner's own lineage whose judge views are closest to the photo (see dino.py),
+    # when it clearly leads the selector's last pick: a late rewrite that drifted away is undone. No model call.
+    view_pick: bool = False
+    # Every finishing step is kept only when the judge views do not move away from the photo, and the finished module
+    # is turned and toned so that they are closest to it. Renders only.
+    view_fit: bool = False
     post_pick_effort: str = "xhigh"  # effort of the rewrites of the final pick
     post_pick_steps: int = POST_PICK_STEPS  # rewrites of the final pick; 0 ends the chain at the pick
 
@@ -642,6 +663,9 @@ class Pipeline:
         self.keep_shots = False  # candidates keep their uncropped side views for judge_pick
         self.end_reserve = 0.0  # credits the round planner leaves for the selection after the last round
         self.merge_base = ""  # the draft the merged draft was built on
+        self.photo_vector: np.ndarray | None = None  # dino embedding of the photo, in plans that finish by it
+        self.visited: list[Candidate] = []  # every rendered module, in render order
+        self.view_scores: dict[str, int] = {}  # view similarity by module source
 
     # ----- model calls -----
 
@@ -1011,6 +1035,13 @@ class Pipeline:
         except RenderRejected as rejection:
             return source, rejection.detail_json
         candidate = Candidate(name, source, view_sheet(views), grid, raw, views)
+        if self.photo_vector is not None:
+            try:
+                candidate.similarity = dino.grid_similarity(front, self.photo_vector)
+            except OverflowError:
+                candidate.similarity = -1
+            self.view_scores[source] = candidate.similarity
+            self.visited.append(candidate)
         if self.keep_shots:
             candidate.shots = judge_shots(front)[:2]
         if self.photo is not None:
@@ -1250,6 +1281,8 @@ class Pipeline:
         closeup = object_closeup(self.image)
         if closeup is not None:
             self.closeup = [{"type": "input_image", "image_url": data_url(closeup), "detail": "high"}]
+        if plan.view_pick or plan.view_fit:
+            self.photo_vector = dino.photo_embedding(self.image)
         with ThreadPoolExecutor(max_workers=8, thread_name_prefix="miner404") as pool:
             if plan.measured:
                 self.instructions = prompts.GENERATE_MEASURED
@@ -1287,6 +1320,8 @@ class Pipeline:
                 if plan.measured and len(survivors) == 1 and not searched:  # once only: the Pod has one render slot
                     survivors[0], searched = self.posed_by_search(pool, survivors[0]), True
             winner = self.select(pool, survivors, set(), 1, FINAL_SELECT_ID)[0]
+            if plan.view_pick:
+                winner = self.view_picked(winner)
             self.best_so_far = winner.source
             for index in range(len(plan.steps), len(plan.steps) + plan.post_pick_steps):
                 kept = self.post_pick(pool, winner, index, plan.post_pick_effort)
@@ -1298,15 +1333,83 @@ class Pipeline:
                 winner = self.checked(pool, winner)
                 self.best_so_far = winner.source
             final = self.posed(pool, winner) if plan.pose and not plan.measured else winner
-            source = self.stronger_metal(self.photo_tilted(self.fitted_last(winner, plan)) if plan.outline_fit_last and final is winner else final.source)
+            if plan.view_fit:
+                source = final.source
+                if plan.outline_fit_last and final is winner:
+                    source = self.closer(source, self.fitted_last(winner, plan))
+                    source = self.closer(source, self.photo_tilted(source))
+                source = self.closer(source, self.stronger_metal(source))
+            else:
+                source = self.stronger_metal(self.photo_tilted(self.fitted_last(winner, plan)) if plan.outline_fit_last and final is winner else final.source)
             if plan.judged_tilt:
                 self.best_so_far = source
-                source = self.judged_tilt(pool, source)
+                tilted = self.judged_tilt(pool, source)
+                source = self.closer(source, tilted) if plan.view_fit else tilted
             if plan.tone:
                 source = self.toned(source)
             if plan.forward:
                 source = self.pushed_forward(source)
+            if plan.view_fit:
+                self.best_so_far = source
+                source = self.view_fitted(source)
             return source
+
+    def view_picked(self, winner: Candidate) -> Candidate:
+        """The module of the winner's lineage (its first draft and every rewrite made from it, kept or not) whose judge
+        views are closest to the photo, when it leads the winner by VIEW_PICK_GAIN; the later one on a tie."""
+        def root(candidate: Candidate) -> Candidate:
+            while candidate.parent is not None:
+                candidate = candidate.parent
+            return candidate
+
+        family = [c for c in self.visited if root(c) is root(winner) and c.similarity >= 0]
+        if winner.similarity < 0 or not family:
+            return winner
+        best = max(enumerate(family), key=lambda item: (item[1].similarity, item[0]))[1]
+        return best if best.similarity >= winner.similarity + VIEW_PICK_GAIN else winner
+
+    def view_similarity(self, source: str) -> int:
+        """`dino.grid_similarity` of a module's four judge views to the photo; -1 when the renderer refuses it."""
+        if self.photo_vector is None:
+            self.photo_vector = dino.photo_embedding(self.image)
+        if source not in self.view_scores:
+            try:
+                self.view_scores[source] = dino.grid_similarity(self.renderer.render(source, FRONT_JUDGE), self.photo_vector)
+            except (RenderRejected, OverflowError):
+                self.view_scores[source] = -1
+        return self.view_scores[source]
+
+    def closer(self, source: str, changed: str) -> str:
+        """`changed`, unless its judge views are further from the photo than `source`'s."""
+        if changed == source:
+            return source
+        return changed if self.view_similarity(changed) >= self.view_similarity(source) else source
+
+    def view_fitted(self, source: str) -> str:
+        """The finished module turned and toned so that its four judge views are closest to the photo.
+
+        One setting at a time, in the order of VIEW_FIT_STEPS: each trial is one free render scored by
+        `view_similarity`, and a value is kept only when it gains at least VIEW_FIT_GAIN. A trial the renderer
+        refuses scores nothing. As it is when nothing gains."""
+
+        def edited(state: tuple[float, ...]) -> str:
+            yaw, pitch, roll, gamma, saturation = state
+            text = orient.reposed(source, int(yaw), int(pitch), int(roll))
+            if (gamma, saturation) != (1.0, 1.0):
+                text = text.replace(GRADE_CALL, f"__grade404(THREE, root, {gamma}, {saturation});", 1)
+            return text
+
+        state: tuple[float, ...] = (0, 0, 0, 1.0, 1.0)
+        best = self.view_similarity(source)
+        if best < 0:
+            return source
+        for index, values in VIEW_FIT_STEPS:
+            for value in values(state[index]):
+                trial = (*state[:index], value, *state[index + 1:])
+                score = self.view_similarity(edited(trial))
+                if score >= best + VIEW_FIT_GAIN:
+                    best, state = score, trial
+        return edited(state)
 
     def photo_tilted(self, source: str) -> str:
         """The module at the tilt that matches the photo best, as it is when the photo does not settle it or the renderer refuses."""
