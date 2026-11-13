@@ -6,7 +6,7 @@ import numpy as np
 from PIL import Image
 
 from miner404 import dino, orient
-from miner404.pipeline import GRADE_CALL, Pipeline, VIEW_FIT_GAIN, VIEW_PICK_GAIN
+from miner404.pipeline import GRADE_CALL, Pipeline, VIEW_FIT_GAIN, VIEW_GATE, VIEW_PICK_GAIN
 
 WRAPPED = "function __asset404(THREE) { return new THREE.Group(); }\nroot.add(__asset404(THREE));\n" + GRADE_CALL + "\n"
 
@@ -116,3 +116,30 @@ def test_active_plan_finishes_by_view_similarity_without_the_forward_move():
     from miner404.versions import ACTIVE_PLAN
 
     assert ACTIVE_PLAN.view_fit and ACTIVE_PLAN.view_pick and not ACTIVE_PLAN.forward
+
+
+def test_gate_overrules_the_vote_only_for_a_clear_move_of_the_views():
+    from miner404.pipeline import Candidate
+
+    pipeline = Pipeline(png(picture(5)), 0, None, ScriptedRenderer(picture(5), picture(6)))
+
+    def module(similarity: int) -> Candidate:
+        candidate = Candidate("m", "m", b"", b"")
+        candidate.similarity = similarity
+        return candidate
+
+    parent = module(800_000)
+    assert pipeline.gated(0, parent, module(700_000), True)  # view_gate off: the vote stands
+    pipeline.view_gate = True
+    assert pipeline.gated(0, parent, module(800_000 - VIEW_GATE + 1), True)
+    assert not pipeline.gated(0, parent, module(800_000 - VIEW_GATE), True)
+    assert not pipeline.gated(0, parent, module(800_000 + VIEW_GATE - 1), False)
+    assert pipeline.gated(0, parent, module(800_000 + VIEW_GATE), False)
+    assert pipeline.gated(0, parent, module(-1), True) and not pipeline.gated(0, parent, module(-1), False)
+    assert ACTIVE_VIEW_GATE()
+
+
+def ACTIVE_VIEW_GATE() -> bool:
+    from miner404.versions import ACTIVE_PLAN
+
+    return ACTIVE_PLAN.view_gate

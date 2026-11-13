@@ -96,6 +96,7 @@ POSE_SEARCH_GAIN = 0.5  # match score a turn must gain to be offered to the sele
 # Similarity is dino.grid_similarity of the judge's four front views to the photo, in millionths.
 VIEW_PICK_GAIN = 10000  # lead another module of the lineage needs over the selector's last pick to replace it
 VIEW_FIT_GAIN = 3000  # gain a turn or tone needs to be kept
+VIEW_GATE = 20000  # change of similarity from parent to child that overrules the round's own keep-or-drop vote
 # (setting, trial values given its current value). Settings: 0 yaw, 1 pitch, 2 roll, 3 gamma, 4 saturation.
 # Yaw goes coarse, wider only from the edge of the coarse range, then fine.
 VIEW_FIT_STEPS: tuple[tuple[int, Any], ...] = (
@@ -593,6 +594,9 @@ class StagePlan:
     # Every finishing step is kept only when the judge views do not move away from the photo, and the finished module
     # is turned and toned so that they are closest to it. Renders only.
     view_fit: bool = False
+    # In every round the two-call vote on the rewrite still decides, except when the judge views moved by VIEW_GATE:
+    # a kept rewrite that moved clearly away from the photo is dropped, a dropped one that moved clearly closer is kept.
+    view_gate: bool = False
     post_pick_effort: str = "xhigh"  # effort of the rewrites of the final pick
     post_pick_steps: int = POST_PICK_STEPS  # rewrites of the final pick; 0 ends the chain at the pick
 
@@ -666,6 +670,8 @@ class Pipeline:
         self.photo_vector: np.ndarray | None = None  # dino embedding of the photo, in plans that finish by it
         self.visited: list[Candidate] = []  # every rendered module, in render order
         self.view_scores: dict[str, int] = {}  # view similarity by module source
+        self.view_gate = False
+        self.gate_log: list[tuple[int, int, bool, bool]] = []  # (round, similarity change, the vote, kept)
 
     # ----- model calls -----
 
@@ -1281,8 +1287,9 @@ class Pipeline:
         closeup = object_closeup(self.image)
         if closeup is not None:
             self.closeup = [{"type": "input_image", "image_url": data_url(closeup), "detail": "high"}]
-        if plan.view_pick or plan.view_fit:
+        if plan.view_pick or plan.view_fit or plan.view_gate:
             self.photo_vector = dino.photo_embedding(self.image)
+        self.view_gate = plan.view_gate
         with ThreadPoolExecutor(max_workers=8, thread_name_prefix="miner404") as pool:
             if plan.measured:
                 self.instructions = prompts.GENERATE_MEASURED
@@ -1353,6 +1360,15 @@ class Pipeline:
                 self.best_so_far = source
                 source = self.view_fitted(source)
             return source
+
+    def gated(self, index: int, parent: Candidate, child: Candidate, vote: bool) -> bool:
+        """Whether the child is kept: the round's vote, overruled only by a clear move of the judge views (view_gate)."""
+        if not self.view_gate or parent.similarity < 0 or child.similarity < 0:
+            return vote
+        change = child.similarity - parent.similarity
+        kept = change >= VIEW_GATE if not vote else change > -VIEW_GATE
+        self.gate_log.append((index, change, vote, kept))
+        return kept
 
     def view_picked(self, winner: Candidate) -> Candidate:
         """The module of the winner's lineage (its first draft and every rewrite made from it, kept or not) whose judge
@@ -1581,7 +1597,7 @@ class Pipeline:
             kept = list(survivors)
             for owner, child in zip(owners, children, strict=True):
                 if child is not None:
-                    if self.judge_pick(pool, survivors[owner], child, select_id + 2 * owner):
+                    if self.gated(index, survivors[owner], child, self.judge_pick(pool, survivors[owner], child, select_id + 2 * owner)):
                         kept[owner] = child
                     self.history.append((index, child.notes, kept[owner] is child))
                     self.changes.append((index, code_changes(survivors[owner].raw, child.raw), kept[owner] is child))
