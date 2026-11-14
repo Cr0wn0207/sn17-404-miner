@@ -112,10 +112,10 @@ def test_closer_keeps_a_finishing_step_only_when_the_views_do_not_move_away():
     assert pipeline.closer(WRAPPED, WRAPPED) == WRAPPED
 
 
-def test_active_plan_finishes_by_view_similarity_without_the_forward_move():
+def test_active_plan_checks_by_view_similarity_without_the_final_fit_or_forward_move():
     from miner404.versions import ACTIVE_PLAN
 
-    assert ACTIVE_PLAN.view_fit and ACTIVE_PLAN.view_pick and not ACTIVE_PLAN.forward
+    assert ACTIVE_PLAN.view_check and ACTIVE_PLAN.view_pick and not ACTIVE_PLAN.view_fit and not ACTIVE_PLAN.forward
 
 
 def test_gate_overrules_the_vote_only_for_a_clear_move_of_the_views():

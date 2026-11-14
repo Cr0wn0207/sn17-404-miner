@@ -591,8 +591,11 @@ class StagePlan:
     # Finish from the module of the winner's own lineage whose judge views are closest to the photo (see dino.py),
     # when it clearly leads the selector's last pick: a late rewrite that drifted away is undone. No model call.
     view_pick: bool = False
-    # Every finishing step is kept only when the judge views do not move away from the photo, and the finished module
-    # is turned and toned so that they are closest to it. Renders only.
+    # Every finishing step (outline fit, photo tilt, stronger metal, judged tilt) is kept only when the judge views do
+    # not move away from the photo. Renders only.
+    view_check: bool = False
+    # The finished module is turned and toned so that its judge views are closest to the photo. Renders only.
+    # Off: on 32 development prompts the judge preferred the module before this fit.
     view_fit: bool = False
     # In every round the two-call vote on the rewrite still decides, except when the judge views moved by VIEW_GATE:
     # a kept rewrite that moved clearly away from the photo is dropped, a dropped one that moved clearly closer is kept.
@@ -1287,7 +1290,7 @@ class Pipeline:
         closeup = object_closeup(self.image)
         if closeup is not None:
             self.closeup = [{"type": "input_image", "image_url": data_url(closeup), "detail": "high"}]
-        if plan.view_pick or plan.view_fit or plan.view_gate:
+        if plan.view_pick or plan.view_check or plan.view_fit or plan.view_gate:
             self.photo_vector = dino.photo_embedding(self.image)
         self.view_gate = plan.view_gate
         with ThreadPoolExecutor(max_workers=8, thread_name_prefix="miner404") as pool:
@@ -1340,7 +1343,7 @@ class Pipeline:
                 winner = self.checked(pool, winner)
                 self.best_so_far = winner.source
             final = self.posed(pool, winner) if plan.pose and not plan.measured else winner
-            if plan.view_fit:
+            if plan.view_check:
                 source = final.source
                 if plan.outline_fit_last and final is winner:
                     source = self.closer(source, self.fitted_last(winner, plan))
@@ -1351,7 +1354,7 @@ class Pipeline:
             if plan.judged_tilt:
                 self.best_so_far = source
                 tilted = self.judged_tilt(pool, source)
-                source = self.closer(source, tilted) if plan.view_fit else tilted
+                source = self.closer(source, tilted) if plan.view_check else tilted
             if plan.tone:
                 source = self.toned(source)
             if plan.forward:
